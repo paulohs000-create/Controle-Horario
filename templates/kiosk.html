@@ -4,7 +4,7 @@
 
 <div class="card">
   <h2>Tablet (Lançamento de Ponto)</h2>
-  <div class="muted">Hoje: <strong>{{ today_local }}</strong> — usuário tablet não pode ver relatórios nem editar funcionárias.</div>
+  <div class="muted">Hoje: <strong>{{ today_local }}</strong></div>
 </div>
 
 <div class="card">
@@ -14,7 +14,7 @@
         <th>Funcionária</th>
         <th>Status</th>
         <th>Ações</th>
-        <th>Almoço / Folga (hoje)</th>
+        <th>Almoço / Folga</th>
       </tr>
     </thead>
     <tbody>
@@ -40,17 +40,17 @@
           </form>
         </td>
 
-        <td style="min-width:260px;">
+        <td style="min-width:280px;">
           <form method="post" action="{{ url_for('kiosk_adjust', emp_id=s.id) }}">
             <label class="muted">Almoço</label>
-            <select name="lunch_minutes" style="font-size:16px;">
+            <select name="lunch_minutes">
               <option value="0"  {% if s.lunch_minutes == 0 %}selected{% endif %}>0 min</option>
               <option value="30" {% if s.lunch_minutes == 30 %}selected{% endif %}>30 min</option>
               <option value="60" {% if s.lunch_minutes == 60 %}selected{% endif %}>1 hora</option>
             </select>
 
             <div style="margin-top:10px;">
-              <label style="font-size:16px;">
+              <label>
                 <input type="checkbox" name="day_off" {% if s.day_off %}checked{% endif %} style="width:auto; margin-right:6px;">
                 Dia de folga (esperado = 0)
               </label>
