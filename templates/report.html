@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Relatório - Ponto{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Relatório por Período</h2>
+  <form method="get" action="{{ url_for('report') }}" class="row">
+    <div style="flex:1;">
+      <label>Início</label>
+      <input type="date" name="start" value="{{ start }}" />
+    </div>
+    <div style="flex:1;">
+      <label>Fim</label>
+      <input type="date" name="end" value="{{ end }}" />
+    </div>
+    <div style="align-self:flex-end;">
+      <button class="btn btn-primary" type="submit">Gerar</button>
+    </div>
+  </form>
+  <p class="muted">
+    “Esperado” = dias úteis (Seg–Sex) × carga diária. (Regra simples; se quiser feriados/folgas eu adiciono.)
+  </p>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Funcionária</th>
+        <th>Trabalhado</th>
+        <th>Esperado</th>
+        <th>Hora extra</th>
+        <th>Débito</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><strong>{{ r.name }}</strong></td>
+        <td>{{ r.worked }}</td>
+        <td>{{ r.expected }}</td>
+        <td><strong>{{ r.overtime }}</strong></td>
+        <td>{{ r.deficit }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
