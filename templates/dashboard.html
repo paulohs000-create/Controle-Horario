@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Ponto{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Resumo</h2>
+  <div class="muted">
+    Hoje: <strong>{{ today_local }}</strong> |
+    Semana: <strong>{{ start_week }}</strong> até <strong>{{ end_week }}</strong>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Marcação de Ponto</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Funcionária</th>
+          <th>Último ponto</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in status %}
+        <tr>
+          <td>
+            <strong>{{ s.name }}</strong><br/>
+            <span class="muted">Carga dia: {{ (s.daily_minutes // 60) }}h{{ "%02d"|format(s.daily_minutes % 60) }} |
+              semana: {{ (s.weekly_minutes // 60) }}h{{ "%02d"|format(s.weekly_minutes % 60) }}</span>
+          </td>
+          <td>
+            {% if s.last_kind %}
+              <strong>{{ s.last_kind }}</strong><br/>
+              <span class="muted">{{ s.last_at_local.strftime("%Y-%m-%d %H:%M") }}</span>
+            {% else %}
+              <span class="muted">Sem marcações</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='IN') }}" style="display:inline;">
+              <button class="btn btn-primary" {% if not s.can_in %}disabled{% endif %}>Entrada</button>
+            </form>
+            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='OUT') }}" style="display:inline;">
+              <button class="btn btn-danger" {% if not s.can_out %}disabled{% endif %}>Saída</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">Regra: Entrada só depois de Saída, e Saída só depois de Entrada.</p>
+  </div>
+
+  <div class="card">
+    <h3>Horas (Hoje / Semana)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Funcionária</th>
+          <th>Trabalhado</th>
+          <th>Hora extra</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in summaries %}
+        <tr>
+          <td><strong>{{ r.id }}</strong> (ID) <span class="muted">— veja o nome na tabela ao lado</span></td>
+          <td>
+            Hoje: <strong>{{ r.today }}</strong><br/>
+            Semana: <strong>{{ r.week }}</strong>
+          </td>
+          <td>
+            Hoje: <strong>{{ r.ot_today }}</strong><br/>
+            Semana: <strong>{{ r.ot_week }}</strong>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">Hora extra = acima da carga definida (dia/semana).</p>
+  </div>
+</div>
+
+{% endblock %}
