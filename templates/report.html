@@ -5,11 +5,11 @@
 <div class="card">
   <h2>Relatório por Período</h2>
   <form method="get" action="{{ url_for('report') }}" class="row">
-    <div style="flex:1;">
+    <div style="flex:1;min-width:220px;">
       <label>Início</label>
       <input type="date" name="start" value="{{ start }}" />
     </div>
-    <div style="flex:1;">
+    <div style="flex:1;min-width:220px;">
       <label>Fim</label>
       <input type="date" name="end" value="{{ end }}" />
     </div>
@@ -17,8 +17,9 @@
       <button class="btn btn-primary" type="submit">Gerar</button>
     </div>
   </form>
-  <p class="muted">
-    “Esperado” = dias úteis (Seg–Sex) × carga diária. (Regra simples; se quiser feriados/folgas eu adiciono.)
+  <p class="muted" style="margin-top:10px;">
+    Esperado = dias úteis × 8h, mas se marcar <strong>Dia de folga</strong> naquele dia, esperado vira 0.
+    Trabalhado líquido = bruto - almoço (0/30/60).
   </p>
 </div>
 
@@ -27,20 +28,28 @@
     <thead>
       <tr>
         <th>Funcionária</th>
-        <th>Trabalhado</th>
+        <th>Bruto</th>
+        <th>Almoço (total)</th>
+        <th>Líquido</th>
         <th>Esperado</th>
-        <th>Hora extra</th>
-        <th>Débito</th>
+        <th>Saldo (pagar/devendo)</th>
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
       <tr>
         <td><strong>{{ r.name }}</strong></td>
-        <td>{{ r.worked }}</td>
+        <td>{{ r.gross }}</td>
+        <td>{{ r.lunch }}</td>
+        <td><strong>{{ r.net }}</strong></td>
         <td>{{ r.expected }}</td>
-        <td><strong>{{ r.overtime }}</strong></td>
-        <td>{{ r.deficit }}</td>
+        <td>
+          {% if r.balance.startswith('-') %}
+            <span class="neg">{{ r.balance }}</span>
+          {% else %}
+            <span class="pos">{{ r.balance }}</span>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
