@@ -4,7 +4,7 @@
 
 <div class="card">
   <h2>Calculadora Semanal</h2>
-  <div class="muted">Histórico fica salvo por dia (entrada/saída). O valor da hora extra é só para cálculo (não salva).</div>
+  <div class="muted">Histórico fica salvo por dia (entrada/saída). Marque <strong>Folga</strong> para zerar esperado do dia e pagar tudo que foi trabalhado.</div>
 </div>
 
 <div class="card">
@@ -27,6 +27,7 @@
     </div>
     <div>
       <button class="btn btn-primary" type="submit">Carregar</button>
+      <a class="btn btn-gray" href="{{ url_for('week', employee_id=selected_emp.id, week_start=prev_week_start.strftime('%Y-%m-%d'), rate=rate) }}">Semana anterior</a>
     </div>
   </form>
 </div>
@@ -41,6 +42,7 @@
         <tr>
           <th>Dia</th>
           <th>Data</th>
+          <th>Escala</th>
           <th>Entrada</th>
           <th>Saída</th>
           <th>Almoço</th>
@@ -55,6 +57,7 @@
         <tr>
           <td><strong>{{ d.label }}</strong></td>
           <td class="muted">{{ key }}</td>
+          <td>{% if d.is_regular_off %}<span class="badge">Folga fixa</span>{% else %}<span class="muted">Trabalho</span>{% endif %}</td>
           <td><input type="time" name="entry_{{ key }}" value="{{ d.entry }}"></td>
           <td><input type="time" name="exit_{{ key }}" value="{{ d.exit }}"></td>
           <td style="min-width:160px;">
@@ -100,6 +103,7 @@
 
   <div style="margin-top:10px;">
     <div><span class="badge">Total trabalhado (líquido)</span> <strong>{{ total_net }}</strong></div>
+    <div style="margin-top:6px;"><span class="badge">Esperado da semana</span> <strong>{{ total_expected }}</strong></div>
     <div style="margin-top:6px;">
       <span class="badge">Saldo final da semana</span>
       {% if week_balance.startswith('-') %}
@@ -108,7 +112,7 @@
         <span class="pos"><strong>{{ week_balance }}</strong></span>
       {% endif %}
       <div class="muted" style="margin-top:6px;">
-        Se saldo &gt; 00:00, paga extra. Se saldo &lt; 00:00, faltou horas.
+        Se saldo &gt; 00:00, paga extra. Se saldo &lt; 00:00, ficou devendo horas nesta semana.
       </div>
     </div>
   </div>

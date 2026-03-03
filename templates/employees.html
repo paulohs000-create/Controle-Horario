@@ -3,29 +3,47 @@
 {% block content %}
 
 <div class="card">
-  <h2>Funcionárias</h2>
-  <p class="muted">Cargas em minutos (480=8h, 2400=40h).</p>
+  <h2>Equipe e regras de ponto</h2>
+  <p class="muted">Configure tipo (funcionária/freelancer), carga horária, valor/hora e folgas fixas semanais.</p>
 </div>
 
 <div class="card">
   <table>
     <thead>
       <tr>
-        <th>ID</th>
         <th>Nome</th>
+        <th>Tipo</th>
         <th>Carga dia (min)</th>
         <th>Carga semana (min)</th>
-        <th>Salvar</th>
+        <th>Valor hora</th>
+        <th>Folgas fixas</th>
+        <th>Ação</th>
       </tr>
     </thead>
     <tbody>
       {% for e in employees %}
+      {% set off = (e.off_days or '').split(',') %}
       <tr>
         <form method="post" action="{{ url_for('employees_update', emp_id=e.id) }}">
-          <td><strong>{{ e.id }}</strong></td>
           <td><input name="name" value="{{ e.name }}" /></td>
+          <td>
+            <select name="employee_type">
+              <option value="employee" {% if e.employee_type != 'freelancer' %}selected{% endif %}>Funcionária</option>
+              <option value="freelancer" {% if e.employee_type == 'freelancer' %}selected{% endif %}>Freelancer</option>
+            </select>
+          </td>
           <td><input name="daily_minutes" value="{{ e.daily_minutes }}" /></td>
           <td><input name="weekly_minutes" value="{{ e.weekly_minutes }}" /></td>
+          <td><input name="hourly_rate" placeholder="Ex: 12,50" value="{{ e.hourly_rate or '' }}" /></td>
+          <td>
+            <div style="display:grid; grid-template-columns:repeat(2, minmax(72px,1fr)); gap:4px;">
+              {% for i, lbl in [(0,'Seg'),(1,'Ter'),(2,'Qua'),(3,'Qui'),(4,'Sex'),(5,'Sáb'),(6,'Dom')] %}
+              <label class="muted" style="font-size:12px;">
+                <input style="width:auto;" type="checkbox" name="off_{{ i }}" {% if (i|string) in off %}checked{% endif %}> {{ lbl }}
+              </label>
+              {% endfor %}
+            </div>
+          </td>
           <td><button class="btn btn-primary" type="submit">Salvar</button></td>
         </form>
       </tr>
