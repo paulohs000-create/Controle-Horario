@@ -1,0 +1,6 @@
+Flask==3.0.3
+gunicorn==22.0.0
+psycopg[binary]==3.2.1
+SQLAlchemy==2.0.32
+Flask-Login==0.6.3
+python-dotenv==1.0.1
