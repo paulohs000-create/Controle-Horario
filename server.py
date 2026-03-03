@@ -25,6 +25,7 @@ from sqlalchemy import (
     desc,
     text,
     delete,
+    inspect,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -200,13 +201,11 @@ class DailyAdjustment(Base):
 # Schema upgrade
 # -----------------------------------------------------------------------------
 def ensure_schema_upgrades():
-    with engine.begin() as conn:
-        col = conn.execute(text("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name='admin_users' AND column_name='role'
-        """)).fetchone()
-        if not col:
+    inspector = inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("admin_users")}
+
+    if "role" not in columns:
+        with engine.begin() as conn:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN role VARCHAR(20) DEFAULT 'admin';"))
             conn.execute(text("UPDATE admin_users SET role='admin' WHERE role IS NULL;"))
 

@@ -34,14 +34,7 @@
     <strong>Ponto</strong>
 
     {% if current_user.is_authenticated %}
-      {% if current_user.role == 'admin' %}
-        <a href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('week') }}">Semana</a>
-        <a href="{{ url_for('employees') }}">Funcionárias</a>
-        <a href="{{ url_for('report') }}">Relatório</a>
-      {% else %}
-        <a href="{{ url_for('kiosk') }}">Tablet</a>
-      {% endif %}
+      <a href="{{ url_for('week') }}">Semana</a>
       <span style="flex:1"></span>
       <a href="{{ url_for('logout') }}">Sair</a>
     {% endif %}
