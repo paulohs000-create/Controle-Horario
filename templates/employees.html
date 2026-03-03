@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Funcionárias - Ponto{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Funcionárias</h2>
+  <p class="muted">Edite nome e carga horária em minutos (ex.: 480 = 8h, 2400 = 40h).</p>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Nome</th>
+        <th>Carga dia (min)</th>
+        <th>Carga semana (min)</th>
+        <th>Salvar</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in employees %}
+      <tr>
+        <form method="post" action="{{ url_for('employees_update', emp_id=e.id) }}">
+          <td><strong>{{ e.id }}</strong></td>
+          <td><input name="name" value="{{ e.name }}" /></td>
+          <td><input name="daily_minutes" value="{{ e.daily_minutes }}" /></td>
+          <td><input name="weekly_minutes" value="{{ e.weekly_minutes }}" /></td>
+          <td><button class="btn btn-primary" type="submit">Salvar</button></td>
+        </form>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
