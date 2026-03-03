@@ -25,6 +25,7 @@ from sqlalchemy import (
     desc,
     text,
     delete,
+    inspect,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -54,6 +55,9 @@ def parse_date(s: str) -> date | None:
 
 
 def parse_hhmm(s: str) -> tuple[int, int] | None:
+    """
+    Aceita "HH:MM" (24h). Retorna (hh, mm) ou None.
+    """
     s = (s or "").strip()
     if not s:
         return None
@@ -90,6 +94,7 @@ def local_dt_to_utc(d: date, hh: int, mm: int) -> datetime:
 
 
 def week_start(d: date) -> date:
+    # segunda-feira
     return d - timedelta(days=d.weekday())
 
 
@@ -104,6 +109,9 @@ def parse_lunch(v: str) -> int:
 
 
 def parse_money(v: str) -> float:
+    """
+    Aceita "12.50" ou "12,50"
+    """
     v = (v or "").strip().replace(",", ".")
     if not v:
         return 0.0
@@ -113,25 +121,27 @@ def parse_money(v: str) -> float:
         return 0.0
 
 
-# -----------------------------------------------------------------------------
-# Template folder resolver (fix TemplateNotFound in mixed repo layouts)
-# -----------------------------------------------------------------------------
-def _resolve_template_folder() -> str:
-    """
-    Alguns repositórios têm templates/ no root, outros em ponto_app/templates/.
-    Railway pode rodar de /app e o Flask procura relativo ao script.
-    Vamos localizar automaticamente para nunca falhar.
-    """
-    base = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base, "templates"),
-        os.path.join(base, "ponto_app", "templates"),
-    ]
-    for c in candidates:
-        if os.path.isdir(c):
-            return c
-    # fallback
-    return os.path.join(base, "templates")
+def parse_off_days(v: str) -> set[int]:
+    out = set()
+    for part in (v or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            i = int(part)
+        except Exception:
+            continue
+        if 0 <= i <= 6:
+            out.add(i)
+    return out
+
+
+def employee_off_days_set(employee: "Employee") -> set[int]:
+    return parse_off_days(getattr(employee, "off_days", "") or "")
+
+
+def is_employee_regular_off(employee: "Employee", day_local: date) -> bool:
+    return day_local.weekday() in employee_off_days_set(employee)
 
 
 # -----------------------------------------------------------------------------
@@ -166,8 +176,11 @@ class Employee(Base):
     __tablename__ = "employees"
     id = Column(Integer, primary_key=True)
     name = Column(String(200), nullable=False, unique=True)
-    daily_minutes = Column(Integer, default=480)
-    weekly_minutes = Column(Integer, default=2400)
+    employee_type = Column(String(20), default="employee")  # employee / freelancer
+    daily_minutes = Column(Integer, default=480)    # 8h
+    weekly_minutes = Column(Integer, default=2400)  # 40h
+    off_days = Column(String(20), default="5,6")  # 0=seg ... 6=dom
+    hourly_rate = Column(String(20), default="")
 
     punches = relationship("Punch", back_populates="employee", cascade="all, delete-orphan")
     adjustments = relationship("DailyAdjustment", back_populates="employee", cascade="all, delete-orphan")
@@ -190,25 +203,35 @@ class DailyAdjustment(Base):
     id = Column(Integer, primary_key=True)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
     day_local = Column(String(10), nullable=False)  # YYYY-MM-DD
-    lunch_minutes = Column(Integer, default=60)
+    lunch_minutes = Column(Integer, default=60)      # 0/30/60
     day_off = Column(Boolean, default=False)
 
     employee = relationship("Employee", back_populates="adjustments")
 
 
 # -----------------------------------------------------------------------------
-# Schema upgrade
+# Schema upgrade (sem Alembic)
 # -----------------------------------------------------------------------------
 def ensure_schema_upgrades():
-    with engine.begin() as conn:
-        col = conn.execute(text("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name='admin_users' AND column_name='role'
-        """)).fetchone()
-        if not col:
+    inspector = inspect(engine)
+
+    admin_columns = {c["name"] for c in inspector.get_columns("admin_users")}
+    if "role" not in admin_columns:
+        with engine.begin() as conn:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN role VARCHAR(20) DEFAULT 'admin';"))
             conn.execute(text("UPDATE admin_users SET role='admin' WHERE role IS NULL;"))
+
+    emp_columns = {c["name"] for c in inspector.get_columns("employees")}
+    with engine.begin() as conn:
+        if "employee_type" not in emp_columns:
+            conn.execute(text("ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'employee';"))
+            conn.execute(text("UPDATE employees SET employee_type='employee' WHERE employee_type IS NULL;"))
+        if "off_days" not in emp_columns:
+            conn.execute(text("ALTER TABLE employees ADD COLUMN off_days VARCHAR(20) DEFAULT '5,6';"))
+            conn.execute(text("UPDATE employees SET off_days='5,6' WHERE off_days IS NULL;"))
+        if "hourly_rate" not in emp_columns:
+            conn.execute(text("ALTER TABLE employees ADD COLUMN hourly_rate VARCHAR(20) DEFAULT '';"))
+            conn.execute(text("UPDATE employees SET hourly_rate='' WHERE hourly_rate IS NULL;"))
 
 
 def ensure_db():
@@ -223,7 +246,12 @@ def seed_default_users_and_employees():
     kiosk_user = os.environ.get("KIOSK_USER", "tablet")
     kiosk_pass = os.environ.get("KIOSK_PASS", "tablet123")
 
-    default_employees = ["Luziane", "Marly", "Regina", "Sueli"]
+    default_employees = [
+        ("Costureira A", "employee", "4,5", ""),  # folga sexta/sábado
+        ("Costureira B", "employee", "6,0", ""),  # folga domingo/segunda
+        ("Costureira C", "employee", "5,6", ""),  # folga sábado/domingo
+        ("Freelancer", "freelancer", "", ""),
+    ]
 
     db = SessionLocal()
     try:
@@ -241,10 +269,12 @@ def seed_default_users_and_employees():
             if not u_kiosk.role:
                 u_kiosk.role = "kiosk"
 
-        for n in default_employees:
+        for n, t, off_days, rate in default_employees:
             e = db.execute(select(Employee).where(Employee.name == n)).scalar_one_or_none()
             if not e:
-                db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400))
+                daily = 0 if t == "freelancer" else 480
+                weekly = 0 if t == "freelancer" else 2400
+                db.add(Employee(name=n, employee_type=t, daily_minutes=daily, weekly_minutes=weekly, off_days=off_days, hourly_rate=rate))
 
         db.commit()
     finally:
@@ -252,12 +282,13 @@ def seed_default_users_and_employees():
 
 
 # -----------------------------------------------------------------------------
-# Flask app (template_folder fixed)
+# Flask app
 # -----------------------------------------------------------------------------
-app = Flask(__name__, template_folder=_resolve_template_folder(), static_folder=None)
+app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 
+# garante schema antes do Flask-Login buscar usuário
 ensure_db()
 seed_default_users_and_employees()
 
@@ -275,6 +306,9 @@ def load_user(user_id):
         db.close()
 
 
+# -----------------------------------------------------------------------------
+# Auth helpers
+# -----------------------------------------------------------------------------
 def role_required(*roles):
     def decorator(fn):
         @wraps(fn)
@@ -287,6 +321,23 @@ def role_required(*roles):
             return fn(*args, **kwargs)
         return wrapper
     return decorator
+
+
+# -----------------------------------------------------------------------------
+# Core helpers
+# -----------------------------------------------------------------------------
+def get_last_punch(db, emp_id: int) -> Punch | None:
+    return db.execute(
+        select(Punch).where(Punch.employee_id == emp_id).order_by(desc(Punch.at_utc)).limit(1)
+    ).scalar_one_or_none()
+
+
+def can_punch_in(last: Punch | None) -> bool:
+    return (last is None) or (last.kind == "OUT")
+
+
+def can_punch_out(last: Punch | None) -> bool:
+    return (last is not None) and (last.kind == "IN")
 
 
 def get_or_create_adjustment(db, emp_id: int, day_local: date) -> DailyAdjustment:
@@ -333,7 +384,9 @@ def worked_minutes_gross_for_day(db, emp_id: int, d_local: date) -> int:
 def expected_minutes_for_day(employee: Employee, day_local: date, day_off_flag: bool) -> int:
     if day_off_flag:
         return 0
-    if day_local.weekday() >= 5:
+    if (employee.employee_type or "employee") == "freelancer":
+        return 0
+    if is_employee_regular_off(employee, day_local):
         return 0
     return int(employee.daily_minutes or 0)
 
@@ -363,6 +416,12 @@ def get_day_first_in_and_last_out(db, emp_id: int, d_local: date) -> tuple[datet
 
 
 def replace_day_punches(db, emp_id: int, d_local: date, entry_hhmm: str, exit_hhmm: str):
+    """
+    Admin: substitui os punches do dia (apaga e recria) para corrigir esquecimentos.
+    - Se entry vazio e exit vazio: apaga todos punches do dia.
+    - Se só entry: cria IN.
+    - Se entry+exit: cria IN e OUT.
+    """
     s_utc, e_utc = dt_range_utc_for_local_day(d_local)
 
     db.execute(
@@ -384,18 +443,31 @@ def replace_day_punches(db, emp_id: int, d_local: date, entry_hhmm: str, exit_hh
 
     if ent is not None and exi is not None:
         out_utc = local_dt_to_utc(d_local, exi[0], exi[1])
+        # se saída antes da entrada, considera inválido (não cria)
         if out_utc > local_dt_to_utc(d_local, ent[0], ent[1]):
             db.add(Punch(employee_id=emp_id, kind="OUT", at_utc=out_utc))
 
 
 # -----------------------------------------------------------------------------
-# Routes (mínimas para week + login)
+# Routes
 # -----------------------------------------------------------------------------
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
 @app.get("/setup")
 def setup():
     ensure_db()
     seed_default_users_and_employees()
-    return {"ok": True, "message": "DB pronta. Use /login."}
+    return {
+        "ok": True,
+        "message": "DB pronta. Use /login (admin) ou /kiosk (tablet).",
+        "admin_user_env": "ADMIN_USER (default admin)",
+        "admin_pass_env": "ADMIN_PASS (default admin123)",
+        "kiosk_user_env": "KIOSK_USER (default tablet)",
+        "kiosk_pass_env": "KIOSK_PASS (default tablet123)",
+    }
 
 
 @app.get("/login")
@@ -415,7 +487,9 @@ def login_post():
             flash("Login inválido", "error")
             return redirect(url_for("login"))
         login_user(u, remember=True)
-        return redirect(url_for("week"))
+        if u.role == "kiosk":
+            return redirect(url_for("kiosk"))
+        return redirect(url_for("dashboard"))
     finally:
         db.close()
 
@@ -427,6 +501,362 @@ def logout():
     return redirect(url_for("login"))
 
 
+# ---------------- KIOSK ----------------
+@app.get("/kiosk")
+@login_required
+@role_required("kiosk")
+def kiosk():
+    db = SessionLocal()
+    try:
+        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        today_local = datetime.now(APP_TZ).date()
+
+        items = []
+        for e in employees:
+            last = get_last_punch(db, e.id)
+            adj = get_or_create_adjustment(db, e.id, today_local)
+            first_in, last_out = get_day_first_in_and_last_out(db, e.id, today_local)
+
+            items.append({
+                "id": e.id,
+                "name": e.name,
+                "last_kind": last.kind if last else None,
+                "last_at_local": to_local(last.at_utc) if last else None,
+                "can_in": can_punch_in(last),
+                "can_out": can_punch_out(last),
+                "lunch_minutes": int(adj.lunch_minutes or 0),
+                "day_off": bool(adj.day_off),
+                "today_in": to_local(first_in) if first_in else None,
+                "today_out": to_local(last_out) if last_out else None,
+            })
+
+        db.commit()
+        return render_template("kiosk.html", items=items, today_local=today_local)
+    finally:
+        db.close()
+
+
+@app.post("/kiosk/punch/<int:emp_id>/<kind>")
+@login_required
+@role_required("kiosk")
+def kiosk_punch(emp_id: int, kind: str):
+    kind = kind.upper()
+    if kind not in ("IN", "OUT"):
+        flash("Tipo inválido", "error")
+        return redirect(url_for("kiosk"))
+
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("kiosk"))
+
+        last = get_last_punch(db, emp_id)
+
+        if kind == "IN" and not can_punch_in(last):
+            flash("Já existe uma entrada em aberto (falta saída).", "error")
+            return redirect(url_for("kiosk"))
+
+        if kind == "OUT" and not can_punch_out(last):
+            flash("Não existe entrada para fechar (faça entrada primeiro).", "error")
+            return redirect(url_for("kiosk"))
+
+        db.add(Punch(employee_id=emp_id, kind=kind, at_utc=utcnow()))
+        db.commit()
+        flash(f"Marcado {('ENTRADA' if kind=='IN' else 'SAÍDA')} para {emp.name}", "success")
+        return redirect(url_for("kiosk"))
+    finally:
+        db.close()
+
+
+@app.post("/kiosk/adjust/<int:emp_id>")
+@login_required
+@role_required("kiosk")
+def kiosk_adjust(emp_id: int):
+    today_local = datetime.now(APP_TZ).date()
+    lunch = (request.form.get("lunch_minutes") or "").strip()
+    day_off = request.form.get("day_off") == "on"
+
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("kiosk"))
+
+        adj = get_or_create_adjustment(db, emp_id, today_local)
+        adj.lunch_minutes = parse_lunch(lunch)
+        adj.day_off = bool(day_off)
+
+        db.commit()
+        flash(f"Ajustes salvos para {emp.name}.", "success")
+        return redirect(url_for("kiosk"))
+    finally:
+        db.close()
+
+
+# ---------------- ADMIN ----------------
+@app.get("/")
+@login_required
+@role_required("admin")
+def dashboard():
+    db = SessionLocal()
+    try:
+        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        today_local = datetime.now(APP_TZ).date()
+
+        start_today_utc, end_today_utc = dt_range_utc_for_local_day(today_local)
+        start_week = week_start(today_local)
+        end_week = start_week + timedelta(days=6)
+
+        status = []
+        for e in employees:
+            last = get_last_punch(db, e.id)
+            adj = get_or_create_adjustment(db, e.id, today_local)
+            first_in, last_out = get_day_first_in_and_last_out(db, e.id, today_local)
+
+            gross_today = worked_minutes_gross_in_range(db, e.id, start_today_utc, end_today_utc)
+            # ✅ almoço só impacta se trabalhou naquele dia
+            lunch_today = int(adj.lunch_minutes or 0) if gross_today > 0 else 0
+            net_today = net_minutes_for_day(gross_today, lunch_today)
+
+            expected_today = expected_minutes_for_day(e, today_local, adj.day_off)
+            balance_today = net_today - expected_today
+
+            net_week = 0
+            expected_week = 0
+            d = start_week
+            while d <= end_week:
+                gross_d = worked_minutes_gross_for_day(db, e.id, d)
+                adj_d = get_or_create_adjustment(db, e.id, d)
+                lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
+                net_d = net_minutes_for_day(gross_d, lunch_d)
+                exp_d = expected_minutes_for_day(e, d, bool(adj_d.day_off))
+                net_week += net_d
+                expected_week += exp_d
+                d += timedelta(days=1)
+
+            week_balance = net_week - expected_week
+
+            status.append(
+                {
+                    "id": e.id,
+                    "name": e.name,
+                    "employee_type": e.employee_type,
+                    "daily_minutes": e.daily_minutes,
+                    "weekly_minutes": e.weekly_minutes,
+                    "last_kind": last.kind if last else None,
+                    "last_at_local": to_local(last.at_utc) if last else None,
+                    "can_in": can_punch_in(last),
+                    "can_out": can_punch_out(last),
+
+                    "today_in": to_local(first_in) if first_in else None,
+                    "today_out": to_local(last_out) if last_out else None,
+
+                    "lunch_minutes": int(adj.lunch_minutes or 0),
+                    "day_off": bool(adj.day_off),
+
+                    "gross_today": minutes_to_hhmm(gross_today),
+                    "net_today": minutes_to_hhmm(net_today),
+                    "expected_today": minutes_to_hhmm(expected_today),
+                    "balance_today": minutes_to_hhmm(balance_today),
+
+                    "net_week": minutes_to_hhmm(net_week),
+                    "expected_week": minutes_to_hhmm(expected_week),
+                    "week_balance": minutes_to_hhmm(week_balance),
+                }
+            )
+
+        db.commit()
+        return render_template(
+            "dashboard.html",
+            status=status,
+            today_local=today_local,
+            start_week=start_week,
+            end_week=end_week,
+        )
+    finally:
+        db.close()
+
+
+@app.post("/punch/<int:emp_id>/<kind>")
+@login_required
+@role_required("admin")
+def punch(emp_id: int, kind: str):
+    kind = kind.upper()
+    if kind not in ("IN", "OUT"):
+        flash("Tipo inválido", "error")
+        return redirect(url_for("dashboard"))
+
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("dashboard"))
+
+        last = get_last_punch(db, emp_id)
+
+        if kind == "IN" and not can_punch_in(last):
+            flash("Já existe uma entrada em aberto (falta saída).", "error")
+            return redirect(url_for("dashboard"))
+
+        if kind == "OUT" and not can_punch_out(last):
+            flash("Não existe entrada para fechar (faça entrada primeiro).", "error")
+            return redirect(url_for("dashboard"))
+
+        db.add(Punch(employee_id=emp_id, kind=kind, at_utc=utcnow()))
+        db.commit()
+        flash(f"Marcado {('ENTRADA' if kind=='IN' else 'SAÍDA')} para {emp.name}", "success")
+        return redirect(url_for("dashboard"))
+    finally:
+        db.close()
+
+
+@app.post("/adjustments/today/<int:emp_id>")
+@login_required
+@role_required("admin")
+def set_today_adjustments(emp_id: int):
+    today_local = datetime.now(APP_TZ).date()
+    lunch = (request.form.get("lunch_minutes") or "").strip()
+    day_off = request.form.get("day_off") == "on"
+
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("dashboard"))
+
+        adj = get_or_create_adjustment(db, emp_id, today_local)
+        adj.lunch_minutes = parse_lunch(lunch)
+        adj.day_off = bool(day_off)
+
+        db.commit()
+        flash(f"Ajustes de hoje salvos para {emp.name}.", "success")
+        return redirect(url_for("dashboard"))
+    finally:
+        db.close()
+
+
+@app.get("/employees")
+@login_required
+@role_required("admin")
+def employees():
+    db = SessionLocal()
+    try:
+        emps = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        return render_template("employees.html", employees=emps, weekday_labels=["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"])
+    finally:
+        db.close()
+
+
+@app.post("/employees/update/<int:emp_id>")
+@login_required
+@role_required("admin")
+def employees_update(emp_id: int):
+    name = (request.form.get("name") or "").strip()
+    daily = (request.form.get("daily_minutes") or "").strip()
+    weekly = (request.form.get("weekly_minutes") or "").strip()
+    employee_type = (request.form.get("employee_type") or "employee").strip().lower()
+    hourly_rate = (request.form.get("hourly_rate") or "").strip()
+    off_days_values = [str(i) for i in range(7) if request.form.get(f"off_{i}") == "on"]
+
+    def to_int(v, fallback):
+        try:
+            return int(v)
+        except Exception:
+            return fallback
+
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("employees"))
+
+        if name:
+            emp.name = name
+
+        emp.employee_type = "freelancer" if employee_type == "freelancer" else "employee"
+        emp.daily_minutes = to_int(daily, emp.daily_minutes)
+        emp.weekly_minutes = to_int(weekly, emp.weekly_minutes)
+        emp.off_days = ",".join(off_days_values)
+        emp.hourly_rate = hourly_rate
+
+        db.commit()
+        flash("Funcionária atualizada.", "success")
+        return redirect(url_for("employees"))
+    finally:
+        db.close()
+
+
+@app.get("/report")
+@login_required
+@role_required("admin")
+def report():
+    db = SessionLocal()
+    try:
+        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+
+        today_local = datetime.now(APP_TZ).date()
+        start_s = request.args.get("start") or today_local.replace(day=1).strftime("%Y-%m-%d")
+        end_s = request.args.get("end") or today_local.strftime("%Y-%m-%d")
+
+        start_d = parse_date(start_s) or today_local.replace(day=1)
+        end_d = parse_date(end_s) or today_local
+        if end_d < start_d:
+            start_d, end_d = end_d, start_d
+
+        rows = []
+        for e in employees:
+            total_gross = 0
+            total_net = 0
+            total_expected = 0
+            total_lunch = 0
+
+            d = start_d
+            while d <= end_d:
+                gross_d = worked_minutes_gross_for_day(db, e.id, d)
+                adj_d = get_or_create_adjustment(db, e.id, d)
+
+                # ✅ almoço só conta se houve trabalho no dia
+                lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
+                net_d = net_minutes_for_day(gross_d, lunch_d)
+                exp_d = expected_minutes_for_day(e, d, bool(adj_d.day_off))
+
+                total_gross += gross_d
+                total_lunch += lunch_d
+                total_net += net_d
+                total_expected += exp_d
+                d += timedelta(days=1)
+
+            balance = total_net - total_expected
+
+            rows.append(
+                {
+                    "name": e.name,
+                    "gross": minutes_to_hhmm(total_gross),
+                    "lunch": minutes_to_hhmm(total_lunch),
+                    "net": minutes_to_hhmm(total_net),
+                    "expected": minutes_to_hhmm(total_expected),
+                    "balance": minutes_to_hhmm(balance),
+                }
+            )
+
+        db.commit()
+        return render_template(
+            "report.html",
+            rows=rows,
+            start=start_d.strftime("%Y-%m-%d"),
+            end=end_d.strftime("%Y-%m-%d"),
+        )
+    finally:
+        db.close()
+
+
+# ---------------- Semana (admin) ----------------
 @app.get("/week")
 @login_required
 @role_required("admin")
@@ -436,18 +866,22 @@ def week():
         employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
         if not employees:
             flash("Nenhuma funcionária cadastrada.", "error")
-            return redirect(url_for("login"))
+            return redirect(url_for("dashboard"))
 
         emp_id = request.args.get("employee_id")
-        selected_emp = db.get(Employee, int(emp_id)) if emp_id else employees[0]
+        selected_emp = None
+        if emp_id:
+            selected_emp = db.get(Employee, int(emp_id))
         if not selected_emp:
             selected_emp = employees[0]
 
+        # semana escolhida
         today = datetime.now(APP_TZ).date()
         ws = parse_date(request.args.get("week_start") or "") or week_start(today)
         ws = week_start(ws)
         we = ws + timedelta(days=6)
 
+        # montar dados da semana
         days = []
         total_net = 0
         total_expected = 0
@@ -472,6 +906,7 @@ def week():
                 "exit": out_local.strftime("%H:%M") if out_local else "",
                 "lunch_minutes": int(adj.lunch_minutes or 0),
                 "day_off": bool(adj.day_off),
+                "is_regular_off": is_employee_regular_off(selected_emp, d),
                 "worked": minutes_to_hhmm(net),
                 "balance": minutes_to_hhmm(bal),
             })
@@ -482,7 +917,9 @@ def week():
 
         week_balance = total_net - total_expected
 
-        rate = parse_money(request.args.get("rate") or "")
+        # valor hora extra não salva; só cálculo na tela
+        rate_input = request.args.get("rate")
+        rate = parse_money(rate_input if rate_input is not None else (selected_emp.hourly_rate or ""))
         extra_minutes = max(0, week_balance)
         total_pay = (extra_minutes / 60.0) * rate if rate > 0 else 0.0
 
@@ -493,8 +930,10 @@ def week():
             selected_emp=selected_emp,
             week_start_date=ws,
             week_end_date=we,
+            prev_week_start=ws - timedelta(days=7),
             days=days,
             total_net=minutes_to_hhmm(total_net),
+            total_expected=minutes_to_hhmm(total_expected),
             week_balance=minutes_to_hhmm(week_balance),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),
@@ -514,6 +953,11 @@ def week_save():
 
     db = SessionLocal()
     try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada.", "error")
+            return redirect(url_for("week"))
+
         d = ws
         while d <= we:
             key = d.strftime("%Y-%m-%d")
@@ -522,8 +966,10 @@ def week_save():
             lunch = request.form.get(f"lunch_{key}", "60")
             day_off = request.form.get(f"off_{key}") == "on"
 
+            # punches do dia (substitui)
             replace_day_punches(db, emp_id, d, entry, exit_)
 
+            # ajustes do dia
             adj = get_or_create_adjustment(db, emp_id, d)
             adj.lunch_minutes = parse_lunch(lunch)
             adj.day_off = bool(day_off)
@@ -532,6 +978,8 @@ def week_save():
 
         db.commit()
         flash("Semana salva com sucesso.", "success")
+
+        # volta pra semana com o mesmo emp
         return redirect(url_for("week", employee_id=emp_id, week_start=ws.strftime("%Y-%m-%d")))
     finally:
         db.close()
@@ -548,6 +996,7 @@ def week_reset():
 
     db = SessionLocal()
     try:
+        # apaga punches da semana (opcionalmente pode manter ajustes)
         d = ws
         while d <= we:
             s_utc, e_utc = dt_range_utc_for_local_day(d)
@@ -557,6 +1006,7 @@ def week_reset():
                 .where(Punch.at_utc >= s_utc)
                 .where(Punch.at_utc < e_utc)
             )
+            # também zera ajustes da semana
             key = d.strftime("%Y-%m-%d")
             adj = db.execute(
                 select(DailyAdjustment)
