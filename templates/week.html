@@ -4,7 +4,7 @@
 
 <div class="card">
   <h2>Calculadora Semanal</h2>
-
+  <div class="muted">Histórico fica salvo por dia (entrada/saída). O valor da hora extra é só para cálculo (não salva).</div>
 </div>
 
 <div class="card">
@@ -27,7 +27,6 @@
     </div>
     <div>
       <button class="btn btn-primary" type="submit">Carregar</button>
-
     </div>
   </form>
 </div>
@@ -42,7 +41,6 @@
         <tr>
           <th>Dia</th>
           <th>Data</th>
-
           <th>Entrada</th>
           <th>Saída</th>
           <th>Almoço</th>
@@ -57,7 +55,6 @@
         <tr>
           <td><strong>{{ d.label }}</strong></td>
           <td class="muted">{{ key }}</td>
-
           <td><input type="time" name="entry_{{ key }}" value="{{ d.entry }}"></td>
           <td><input type="time" name="exit_{{ key }}" value="{{ d.exit }}"></td>
           <td style="min-width:160px;">
@@ -103,7 +100,6 @@
 
   <div style="margin-top:10px;">
     <div><span class="badge">Total trabalhado (líquido)</span> <strong>{{ total_net }}</strong></div>
-
     <div style="margin-top:6px;">
       <span class="badge">Saldo final da semana</span>
       {% if week_balance.startswith('-') %}
@@ -112,7 +108,7 @@
         <span class="pos"><strong>{{ week_balance }}</strong></span>
       {% endif %}
       <div class="muted" style="margin-top:6px;">
-<
+        Se saldo &gt; 00:00, paga extra. Se saldo &lt; 00:00, faltou horas.
       </div>
     </div>
   </div>

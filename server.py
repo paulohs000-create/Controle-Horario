@@ -121,7 +121,6 @@ def parse_money(v: str) -> float:
         return 0.0
 
 
-
 # -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------
@@ -154,7 +153,8 @@ class Employee(Base):
     __tablename__ = "employees"
     id = Column(Integer, primary_key=True)
     name = Column(String(200), nullable=False, unique=True)
-
+    daily_minutes = Column(Integer, default=480)    # 8h
+    weekly_minutes = Column(Integer, default=2400)  # 40h
 
     punches = relationship("Punch", back_populates="employee", cascade="all, delete-orphan")
     adjustments = relationship("DailyAdjustment", back_populates="employee", cascade="all, delete-orphan")
@@ -188,22 +188,12 @@ class DailyAdjustment(Base):
 # -----------------------------------------------------------------------------
 def ensure_schema_upgrades():
     inspector = inspect(engine)
+    columns = {c["name"] for c in inspector.get_columns("admin_users")}
 
+    if "role" not in columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN role VARCHAR(20) DEFAULT 'admin';"))
             conn.execute(text("UPDATE admin_users SET role='admin' WHERE role IS NULL;"))
-
-    emp_columns = {c["name"] for c in inspector.get_columns("employees")}
-    with engine.begin() as conn:
-        if "employee_type" not in emp_columns:
-            conn.execute(text("ALTER TABLE employees ADD COLUMN employee_type VARCHAR(20) DEFAULT 'employee';"))
-            conn.execute(text("UPDATE employees SET employee_type='employee' WHERE employee_type IS NULL;"))
-        if "off_days" not in emp_columns:
-            conn.execute(text("ALTER TABLE employees ADD COLUMN off_days VARCHAR(20) DEFAULT '5,6';"))
-            conn.execute(text("UPDATE employees SET off_days='5,6' WHERE off_days IS NULL;"))
-        if "hourly_rate" not in emp_columns:
-            conn.execute(text("ALTER TABLE employees ADD COLUMN hourly_rate VARCHAR(20) DEFAULT '';"))
-            conn.execute(text("UPDATE employees SET hourly_rate='' WHERE hourly_rate IS NULL;"))
 
 
 def ensure_db():
@@ -218,12 +208,7 @@ def seed_default_users_and_employees():
     kiosk_user = os.environ.get("KIOSK_USER", "tablet")
     kiosk_pass = os.environ.get("KIOSK_PASS", "tablet123")
 
-    default_employees = [
-        ("Costureira A", "employee", "4,5", ""),  # folga sexta/sábado
-        ("Costureira B", "employee", "6,0", ""),  # folga domingo/segunda
-        ("Costureira C", "employee", "5,6", ""),  # folga sábado/domingo
-        ("Freelancer", "freelancer", "", ""),
-    ]
+    default_employees = ["Luziane", "Marly", "Regina", "Sueli"]
 
     db = SessionLocal()
     try:
@@ -241,12 +226,10 @@ def seed_default_users_and_employees():
             if not u_kiosk.role:
                 u_kiosk.role = "kiosk"
 
-        for n, t, off_days, rate in default_employees:
+        for n in default_employees:
             e = db.execute(select(Employee).where(Employee.name == n)).scalar_one_or_none()
             if not e:
-                daily = 0 if t == "freelancer" else 480
-                weekly = 0 if t == "freelancer" else 2400
-                db.add(Employee(name=n, employee_type=t, daily_minutes=daily, weekly_minutes=weekly, off_days=off_days, hourly_rate=rate))
+                db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400))
 
         db.commit()
     finally:
@@ -356,7 +339,7 @@ def worked_minutes_gross_for_day(db, emp_id: int, d_local: date) -> int:
 def expected_minutes_for_day(employee: Employee, day_local: date, day_off_flag: bool) -> int:
     if day_off_flag:
         return 0
-
+    if day_local.weekday() >= 5:  # sáb/dom
         return 0
     return int(employee.daily_minutes or 0)
 
@@ -613,7 +596,6 @@ def dashboard():
                 {
                     "id": e.id,
                     "name": e.name,
-
                     "daily_minutes": e.daily_minutes,
                     "weekly_minutes": e.weekly_minutes,
                     "last_kind": last.kind if last else None,
@@ -717,7 +699,7 @@ def employees():
     db = SessionLocal()
     try:
         emps = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
-
+        return render_template("employees.html", employees=emps)
     finally:
         db.close()
 
@@ -729,7 +711,6 @@ def employees_update(emp_id: int):
     name = (request.form.get("name") or "").strip()
     daily = (request.form.get("daily_minutes") or "").strip()
     weekly = (request.form.get("weekly_minutes") or "").strip()
-
 
     def to_int(v, fallback):
         try:
@@ -747,7 +728,8 @@ def employees_update(emp_id: int):
         if name:
             emp.name = name
 
-
+        emp.daily_minutes = to_int(daily, emp.daily_minutes)
+        emp.weekly_minutes = to_int(weekly, emp.weekly_minutes)
 
         db.commit()
         flash("Funcionária atualizada.", "success")
@@ -870,7 +852,6 @@ def week():
                 "exit": out_local.strftime("%H:%M") if out_local else "",
                 "lunch_minutes": int(adj.lunch_minutes or 0),
                 "day_off": bool(adj.day_off),
-                "is_regular_off": is_employee_regular_off(selected_emp, d),
                 "worked": minutes_to_hhmm(net),
                 "balance": minutes_to_hhmm(bal),
             })
@@ -882,7 +863,7 @@ def week():
         week_balance = total_net - total_expected
 
         # valor hora extra não salva; só cálculo na tela
-
+        rate = parse_money(request.args.get("rate") or "")
         extra_minutes = max(0, week_balance)
         total_pay = (extra_minutes / 60.0) * rate if rate > 0 else 0.0
 
@@ -893,10 +874,8 @@ def week():
             selected_emp=selected_emp,
             week_start_date=ws,
             week_end_date=we,
-            prev_week_start=ws - timedelta(days=7),
             days=days,
             total_net=minutes_to_hhmm(total_net),
-            total_expected=minutes_to_hhmm(total_expected),
             week_balance=minutes_to_hhmm(week_balance),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),

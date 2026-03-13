@@ -32,7 +32,6 @@
         <td>
           <strong>{{ s.name }}</strong><br/>
           <span class="muted">
-            Tipo: {{ 'Freelancer' if s.employee_type == 'freelancer' else 'Funcionária' }} ·
             Carga: {{ (s.daily_minutes // 60) }}h{{ "%02d"|format(s.daily_minutes % 60) }} / dia
             · {{ (s.weekly_minutes // 60) }}h{{ "%02d"|format(s.weekly_minutes % 60) }} / semana
           </span>
