@@ -337,10 +337,23 @@ def worked_minutes_gross_for_day(db, emp_id: int, d_local: date) -> int:
 
 
 def expected_minutes_for_day(employee: Employee, day_local: date, day_off_flag: bool) -> int:
+    """
+    Regra atual:
+    - Se marcado como folga, esperado = 0
+    - Segunda a sábado contam como dia normal de trabalho
+    - Domingo não conta jornada esperada
+
+    Isso corrige o caso de funcionárias que trabalham no sábado:
+    exemplo 10:01 trabalhadas no sábado com jornada de 8h = saldo 02:01,
+    e não 10:01 de hora extra.
+    """
     if day_off_flag:
         return 0
-    if day_local.weekday() >= 5:  # sáb/dom
+
+    # weekday(): segunda=0 ... sábado=5 ... domingo=6
+    if day_local.weekday() == 6:  # domingo
         return 0
+
     return int(employee.daily_minutes or 0)
 
 
