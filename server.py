@@ -338,22 +338,18 @@ def worked_minutes_gross_for_day(db, emp_id: int, d_local: date) -> int:
 
 def expected_minutes_for_day(employee: Employee, day_local: date, day_off_flag: bool) -> int:
     """
-    Regra atual:
-    - Se marcado como folga, esperado = 0
-    - Segunda a sábado contam como dia normal de trabalho
-    - Domingo não conta jornada esperada
+    Nova regra:
+    - Hora extra só existe acima da carga diária da funcionária.
+    - O dia da semana não altera a regra: segunda, sábado ou domingo usam a mesma carga.
+    - Se estiver marcado como folga, esperado = 0, então todo o tempo trabalhado vira extra.
 
-    Isso corrige o caso de funcionárias que trabalham no sábado:
-    exemplo 10:01 trabalhadas no sábado com jornada de 8h = saldo 02:01,
-    e não 10:01 de hora extra.
+    Exemplos com jornada diária de 8h:
+    - Trabalhou 08:02 e NÃO é folga -> saldo 00:02
+    - Trabalhou 10:01 e NÃO é folga -> saldo 02:01
+    - Trabalhou 05:00 e É folga -> saldo 05:00
     """
     if day_off_flag:
         return 0
-
-    # weekday(): segunda=0 ... sábado=5 ... domingo=6
-    if day_local.weekday() == 6:  # domingo
-        return 0
-
     return int(employee.daily_minutes or 0)
 
 
@@ -583,7 +579,7 @@ def dashboard():
             first_in, last_out = get_day_first_in_and_last_out(db, e.id, today_local)
 
             gross_today = worked_minutes_gross_in_range(db, e.id, start_today_utc, end_today_utc)
-            # ✅ almoço só impacta se trabalhou naquele dia
+            # almoço só impacta se trabalhou naquele dia
             lunch_today = int(adj.lunch_minutes or 0) if gross_today > 0 else 0
             net_today = net_minutes_for_day(gross_today, lunch_today)
 
@@ -780,7 +776,7 @@ def report():
                 gross_d = worked_minutes_gross_for_day(db, e.id, d)
                 adj_d = get_or_create_adjustment(db, e.id, d)
 
-                # ✅ almoço só conta se houve trabalho no dia
+                # almoço só conta se houve trabalho no dia
                 lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
                 net_d = net_minutes_for_day(gross_d, lunch_d)
                 exp_d = expected_minutes_for_day(e, d, bool(adj_d.day_off))
