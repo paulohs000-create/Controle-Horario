@@ -56,7 +56,7 @@ def parse_date(s: str) -> date | None:
 
 def parse_hhmm(s: str) -> tuple[int, int] | None:
     """
-    Aceita "HH:MM" (24h). Retorna (hh, mm) ou None.
+    Aceita HH:MM (24h). Retorna (hh, mm) ou None.
     """
     s = (s or "").strip()
     if not s:
@@ -110,7 +110,7 @@ def parse_lunch(v: str) -> int:
 
 def parse_money(v: str) -> float:
     """
-    Aceita "12.50" ou "12,50"
+    Aceita 12.50 ou 12,50
     """
     v = (v or "").strip().replace(",", ".")
     if not v:
@@ -177,7 +177,7 @@ class DailyAdjustment(Base):
     id = Column(Integer, primary_key=True)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
     day_local = Column(String(10), nullable=False)  # YYYY-MM-DD
-    lunch_minutes = Column(Integer, default=60)      # 0/30/60
+    lunch_minutes = Column(Integer, default=60)      # 0 / 30 / 60
     day_off = Column(Boolean, default=False)
 
     employee = relationship("Employee", back_populates="adjustments")
@@ -358,7 +358,7 @@ def expected_minutes_for_week(db, employee: Employee, ws: date, we: date) -> int
     Regra semanal:
     - Base = weekly_minutes da funcionária
     - Cada dia marcado como folga reduz 1 carga diária da meta semanal
-    - Regina freelancer pode ficar com 0 semanal
+    - Regina freelancer fica com 0 semanal
     """
     weekly = int(employee.weekly_minutes or 0)
     daily = int(employee.daily_minutes or 0)
@@ -631,13 +631,12 @@ def dashboard():
                     "last_at_local": to_local(last.at_utc) if last else None,
                     "can_in": can_punch_in(last),
                     "can_out": can_punch_out(last),
-
                     "today_in": to_local(first_in) if first_in else None,
                     "today_out": to_local(last_out) if last_out else None,
-
                     "lunch_minutes": int(adj.lunch_minutes or 0),
                     "day_off": bool(adj.day_off),
 
+                    # novos campos
                     "gross_today": minutes_to_hhmm(gross_today),
                     "today_worked": minutes_to_hhmm(net_today),
                     "today_expected": minutes_to_hhmm(expected_today),
@@ -650,12 +649,12 @@ def dashboard():
                     "week_extra": minutes_to_hhmm(week_extra),
                     "week_balance": minutes_to_hhmm(week_balance),
 
-                    # compatibilidade com template antigo
+                    # compatibilidade com dashboard antigo
                     "net_today": minutes_to_hhmm(net_today),
                     "expected_today": minutes_to_hhmm(expected_today),
                     "balance_today": minutes_to_hhmm(day_balance),
                     "net_week": minutes_to_hhmm(net_week),
-                    "expected_week_old": minutes_to_hhmm(expected_week),
+                    "expected_week": minutes_to_hhmm(expected_week),
                 }
             )
 
@@ -897,6 +896,7 @@ def week():
         total_expected = expected_minutes_for_week(db, selected_emp, ws, we)
         week_remaining = max(0, total_expected - total_net)
         week_extra = max(0, total_net - total_expected)
+        week_balance_value = total_net - total_expected
 
         rate = parse_money(request.args.get("rate") or "")
         total_pay = (week_extra / 60.0) * rate if rate > 0 else 0.0
@@ -913,6 +913,7 @@ def week():
             total_expected=minutes_to_hhmm(total_expected),
             week_remaining=minutes_to_hhmm(week_remaining),
             week_extra=minutes_to_hhmm(week_extra),
+            week_balance=minutes_to_hhmm(week_balance_value),  # compatibilidade com week.html antigo
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),
         )
