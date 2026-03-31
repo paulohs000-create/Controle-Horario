@@ -229,7 +229,10 @@ def seed_default_users_and_employees():
         for n in default_employees:
             e = db.execute(select(Employee).where(Employee.name == n)).scalar_one_or_none()
             if not e:
-                db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400))
+                if n == "Regina":
+                    db.add(Employee(name=n, daily_minutes=0, weekly_minutes=0))
+                else:
+                    db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400))
 
         db.commit()
     finally:
@@ -243,7 +246,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 
-# garante schema antes do Flask-Login buscar usuário
 ensure_db()
 seed_default_users_and_employees()
 
@@ -336,25 +338,43 @@ def worked_minutes_gross_for_day(db, emp_id: int, d_local: date) -> int:
     return worked_minutes_gross_in_range(db, emp_id, s_utc, e_utc)
 
 
-def expected_minutes_for_day(employee: Employee, day_local: date, day_off_flag: bool) -> int:
-    """
-    Nova regra:
-    - Hora extra só existe acima da carga diária da funcionária.
-    - O dia da semana não altera a regra: segunda, sábado ou domingo usam a mesma carga.
-    - Se estiver marcado como folga, esperado = 0, então todo o tempo trabalhado vira extra.
+def net_minutes_for_day(gross_minutes: int, lunch_minutes: int) -> int:
+    return max(0, gross_minutes - max(0, lunch_minutes))
 
-    Exemplos com jornada diária de 8h:
-    - Trabalhou 08:02 e NÃO é folga -> saldo 00:02
-    - Trabalhou 10:01 e NÃO é folga -> saldo 02:01
-    - Trabalhou 05:00 e É folga -> saldo 05:00
+
+def expected_minutes_for_day(employee: Employee, day_off_flag: bool) -> int:
+    """
+    Regra diária:
+    - Se marcou folga, esperado do dia = 0
+    - Caso contrário, esperado do dia = carga diária da funcionária
     """
     if day_off_flag:
         return 0
     return int(employee.daily_minutes or 0)
 
 
-def net_minutes_for_day(gross_minutes: int, lunch_minutes: int) -> int:
-    return max(0, gross_minutes - max(0, lunch_minutes))
+def expected_minutes_for_week(db, employee: Employee, ws: date, we: date) -> int:
+    """
+    Regra semanal:
+    - Base = weekly_minutes da funcionária
+    - Cada dia marcado como folga reduz 1 carga diária da meta semanal
+    - Regina freelancer pode ficar com 0 semanal
+    """
+    weekly = int(employee.weekly_minutes or 0)
+    daily = int(employee.daily_minutes or 0)
+
+    if weekly <= 0:
+        return 0
+
+    reduction = 0
+    d = ws
+    while d <= we:
+        adj = get_or_create_adjustment(db, employee.id, d)
+        if bool(adj.day_off):
+            reduction += daily
+        d += timedelta(days=1)
+
+    return max(0, weekly - reduction)
 
 
 def get_day_first_in_and_last_out(db, emp_id: int, d_local: date) -> tuple[datetime | None, datetime | None]:
@@ -405,7 +425,6 @@ def replace_day_punches(db, emp_id: int, d_local: date, entry_hhmm: str, exit_hh
 
     if ent is not None and exi is not None:
         out_utc = local_dt_to_utc(d_local, exi[0], exi[1])
-        # se saída antes da entrada, considera inválido (não cria)
         if out_utc > local_dt_to_utc(d_local, ent[0], ent[1]):
             db.add(Punch(employee_id=emp_id, kind="OUT", at_utc=out_utc))
 
@@ -579,26 +598,27 @@ def dashboard():
             first_in, last_out = get_day_first_in_and_last_out(db, e.id, today_local)
 
             gross_today = worked_minutes_gross_in_range(db, e.id, start_today_utc, end_today_utc)
-            # almoço só impacta se trabalhou naquele dia
             lunch_today = int(adj.lunch_minutes or 0) if gross_today > 0 else 0
             net_today = net_minutes_for_day(gross_today, lunch_today)
 
-            expected_today = expected_minutes_for_day(e, today_local, adj.day_off)
-            balance_today = net_today - expected_today
+            expected_today = expected_minutes_for_day(e, bool(adj.day_off))
+            day_balance = net_today - expected_today
+            day_extra = max(0, day_balance)
+            day_missing = max(0, expected_today - net_today)
 
             net_week = 0
-            expected_week = 0
             d = start_week
             while d <= end_week:
                 gross_d = worked_minutes_gross_for_day(db, e.id, d)
                 adj_d = get_or_create_adjustment(db, e.id, d)
                 lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
                 net_d = net_minutes_for_day(gross_d, lunch_d)
-                exp_d = expected_minutes_for_day(e, d, bool(adj_d.day_off))
                 net_week += net_d
-                expected_week += exp_d
                 d += timedelta(days=1)
 
+            expected_week = expected_minutes_for_week(db, e, start_week, end_week)
+            week_remaining = max(0, expected_week - net_week)
+            week_extra = max(0, net_week - expected_week)
             week_balance = net_week - expected_week
 
             status.append(
@@ -619,13 +639,23 @@ def dashboard():
                     "day_off": bool(adj.day_off),
 
                     "gross_today": minutes_to_hhmm(gross_today),
+                    "today_worked": minutes_to_hhmm(net_today),
+                    "today_expected": minutes_to_hhmm(expected_today),
+                    "today_missing": minutes_to_hhmm(day_missing),
+                    "today_extra": minutes_to_hhmm(day_extra),
+
+                    "week_accumulated": minutes_to_hhmm(net_week),
+                    "week_expected": minutes_to_hhmm(expected_week),
+                    "week_remaining": minutes_to_hhmm(week_remaining),
+                    "week_extra": minutes_to_hhmm(week_extra),
+                    "week_balance": minutes_to_hhmm(week_balance),
+
+                    # compatibilidade com template antigo
                     "net_today": minutes_to_hhmm(net_today),
                     "expected_today": minutes_to_hhmm(expected_today),
-                    "balance_today": minutes_to_hhmm(balance_today),
-
+                    "balance_today": minutes_to_hhmm(day_balance),
                     "net_week": minutes_to_hhmm(net_week),
-                    "expected_week": minutes_to_hhmm(expected_week),
-                    "week_balance": minutes_to_hhmm(week_balance),
+                    "expected_week_old": minutes_to_hhmm(expected_week),
                 }
             )
 
@@ -776,10 +806,9 @@ def report():
                 gross_d = worked_minutes_gross_for_day(db, e.id, d)
                 adj_d = get_or_create_adjustment(db, e.id, d)
 
-                # almoço só conta se houve trabalho no dia
                 lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
                 net_d = net_minutes_for_day(gross_d, lunch_d)
-                exp_d = expected_minutes_for_day(e, d, bool(adj_d.day_off))
+                exp_d = expected_minutes_for_day(e, bool(adj_d.day_off))
 
                 total_gross += gross_d
                 total_lunch += lunch_d
@@ -830,16 +859,13 @@ def week():
         if not selected_emp:
             selected_emp = employees[0]
 
-        # semana escolhida
         today = datetime.now(APP_TZ).date()
         ws = parse_date(request.args.get("week_start") or "") or week_start(today)
         ws = week_start(ws)
         we = ws + timedelta(days=6)
 
-        # montar dados da semana
         days = []
         total_net = 0
-        total_expected = 0
 
         d = ws
         while d <= we:
@@ -847,7 +873,7 @@ def week():
             gross = worked_minutes_gross_for_day(db, selected_emp.id, d)
             lunch_effective = int(adj.lunch_minutes or 0) if gross > 0 else 0
             net = net_minutes_for_day(gross, lunch_effective)
-            exp = expected_minutes_for_day(selected_emp, d, bool(adj.day_off))
+            exp = expected_minutes_for_day(selected_emp, bool(adj.day_off))
             bal = net - exp
 
             first_in, last_out = get_day_first_in_and_last_out(db, selected_emp.id, d)
@@ -866,15 +892,14 @@ def week():
             })
 
             total_net += net
-            total_expected += exp
             d += timedelta(days=1)
 
-        week_balance = total_net - total_expected
+        total_expected = expected_minutes_for_week(db, selected_emp, ws, we)
+        week_remaining = max(0, total_expected - total_net)
+        week_extra = max(0, total_net - total_expected)
 
-        # valor hora extra não salva; só cálculo na tela
         rate = parse_money(request.args.get("rate") or "")
-        extra_minutes = max(0, week_balance)
-        total_pay = (extra_minutes / 60.0) * rate if rate > 0 else 0.0
+        total_pay = (week_extra / 60.0) * rate if rate > 0 else 0.0
 
         db.commit()
         return render_template(
@@ -885,7 +910,9 @@ def week():
             week_end_date=we,
             days=days,
             total_net=minutes_to_hhmm(total_net),
-            week_balance=minutes_to_hhmm(week_balance),
+            total_expected=minutes_to_hhmm(total_expected),
+            week_remaining=minutes_to_hhmm(week_remaining),
+            week_extra=minutes_to_hhmm(week_extra),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),
         )
@@ -917,10 +944,8 @@ def week_save():
             lunch = request.form.get(f"lunch_{key}", "60")
             day_off = request.form.get(f"off_{key}") == "on"
 
-            # punches do dia (substitui)
             replace_day_punches(db, emp_id, d, entry, exit_)
 
-            # ajustes do dia
             adj = get_or_create_adjustment(db, emp_id, d)
             adj.lunch_minutes = parse_lunch(lunch)
             adj.day_off = bool(day_off)
@@ -929,8 +954,6 @@ def week_save():
 
         db.commit()
         flash("Semana salva com sucesso.", "success")
-
-        # volta pra semana com o mesmo emp
         return redirect(url_for("week", employee_id=emp_id, week_start=ws.strftime("%Y-%m-%d")))
     finally:
         db.close()
@@ -947,7 +970,6 @@ def week_reset():
 
     db = SessionLocal()
     try:
-        # apaga punches da semana (opcionalmente pode manter ajustes)
         d = ws
         while d <= we:
             s_utc, e_utc = dt_range_utc_for_local_day(d)
@@ -957,7 +979,7 @@ def week_reset():
                 .where(Punch.at_utc >= s_utc)
                 .where(Punch.at_utc < e_utc)
             )
-            # também zera ajustes da semana
+
             key = d.strftime("%Y-%m-%d")
             adj = db.execute(
                 select(DailyAdjustment)
