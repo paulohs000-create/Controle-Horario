@@ -356,25 +356,14 @@ def expected_minutes_for_day(employee: Employee, day_off_flag: bool) -> int:
 def expected_minutes_for_week(db, employee: Employee, ws: date, we: date) -> int:
     """
     Regra semanal:
-    - Base = weekly_minutes da funcionária
-    - Cada dia marcado como folga reduz 1 carga diária da meta semanal
+    - Meta semanal é fixa
+    - Folga NÃO reduz as 40 horas
     - Regina freelancer fica com 0 semanal
     """
     weekly = int(employee.weekly_minutes or 0)
-    daily = int(employee.daily_minutes or 0)
-
     if weekly <= 0:
         return 0
-
-    reduction = 0
-    d = ws
-    while d <= we:
-        adj = get_or_create_adjustment(db, employee.id, d)
-        if bool(adj.day_off):
-            reduction += daily
-        d += timedelta(days=1)
-
-    return max(0, weekly - reduction)
+    return weekly
 
 
 def get_day_first_in_and_last_out(db, emp_id: int, d_local: date) -> tuple[datetime | None, datetime | None]:
@@ -913,7 +902,7 @@ def week():
             total_expected=minutes_to_hhmm(total_expected),
             week_remaining=minutes_to_hhmm(week_remaining),
             week_extra=minutes_to_hhmm(week_extra),
-            week_balance=minutes_to_hhmm(week_balance_value),  # compatibilidade com week.html antigo
+            week_balance=minutes_to_hhmm(week_balance_value),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),
         )
