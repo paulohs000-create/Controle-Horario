@@ -9,8 +9,8 @@
     Semana: <strong>{{ start_week }}</strong> até <strong>{{ end_week }}</strong>
   </div>
   <div class="muted" style="margin-top:6px;">
-    <span class="badge">Saldo do dia</span> = (Trabalhado líquido - Esperado do dia) |
-    <span class="badge">Saldo da semana</span> = (Líquido semana - Esperado semana)
+    <span class="badge">Hoje</span> mostra horas trabalhadas no dia |
+    <span class="badge">Semana</span> mostra acumulado, meta, falta e extra
   </div>
 </div>
 
@@ -66,8 +66,13 @@
             <div style="margin-top:10px;">
               <label>
                 <input type="checkbox" name="day_off" {% if s.day_off %}checked{% endif %} style="width:auto; margin-right:6px;">
-                Dia de folga (esperado = 0)
+                Dia de folga
               </label>
+            </div>
+
+            <div class="muted" style="margin-top:6px;">
+              Se marcar folga, o dia não entra como falta na meta semanal.
+              Se houver trabalho nesse dia, conta como extra.
             </div>
 
             <div style="margin-top:10px;">
@@ -77,30 +82,40 @@
         </td>
 
         <td>
-          <div class="muted">Bruto: <strong>{{ s.gross_today }}</strong></div>
-          <div class="muted">Líquido: <strong>{{ s.net_today }}</strong></div>
-          <div class="muted">Esperado: <strong>{{ s.expected_today }}</strong></div>
+          <div class="muted">Trabalhado: <strong>{{ s.today_worked }}</strong></div>
+          <div class="muted">Meta do dia: <strong>{{ s.today_expected }}</strong></div>
+          <div class="muted">Falta hoje: <strong>{{ s.today_missing }}</strong></div>
+          <div class="muted">Extra hoje: <strong>{{ s.today_extra }}</strong></div>
+
           <div style="margin-top:6px;">
-            {% if s.balance_today.startswith('-') %}
-              <span class="neg">Saldo: {{ s.balance_today }}</span>
+            {% if s.today_extra != '00:00' %}
+              <span class="pos">Extra: {{ s.today_extra }}</span>
+            {% elif s.today_missing != '00:00' %}
+              <span class="neg">Falta: {{ s.today_missing }}</span>
             {% else %}
-              <span class="pos">Saldo: {{ s.balance_today }}</span>
+              <span class="pos">Dia completo: 00:00</span>
             {% endif %}
           </div>
         </td>
 
         <td>
-          <div class="muted">Líquido: <strong>{{ s.net_week }}</strong></div>
-          <div class="muted">Esperado: <strong>{{ s.expected_week }}</strong></div>
+          <div class="muted">Acumulado: <strong>{{ s.week_accumulated }}</strong></div>
+          <div class="muted">Meta: <strong>{{ s.week_expected }}</strong></div>
+          <div class="muted">Falta p/ meta: <strong>{{ s.week_remaining }}</strong></div>
+          <div class="muted">Extra: <strong>{{ s.week_extra }}</strong></div>
+
           <div style="margin-top:6px;">
-            {% if s.week_balance.startswith('-') %}
-              <span class="neg">Saldo: {{ s.week_balance }}</span>
+            {% if s.week_extra != '00:00' %}
+              <span class="pos">Extra na semana: {{ s.week_extra }}</span>
+            {% elif s.week_remaining != '00:00' %}
+              <span class="neg">Falta na semana: {{ s.week_remaining }}</span>
             {% else %}
-              <span class="pos">Saldo: {{ s.week_balance }}</span>
+              <span class="pos">Meta semanal completa</span>
             {% endif %}
           </div>
+
           <div class="muted" style="margin-top:6px;">
-            Se saldo > 00:00, paga extra. Se < 00:00, faltou horas.
+            Meta semanal padrão: 40:00. Regina pode permanecer com 00:00 por ser freelancer.
           </div>
         </td>
       </tr>
