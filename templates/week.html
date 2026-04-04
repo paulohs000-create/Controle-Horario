@@ -4,29 +4,36 @@
 
 <div class="card">
   <h2>Calculadora Semanal</h2>
-  <div class="muted">Histórico fica salvo por dia (entrada/saída). O valor da hora extra é só para cálculo (não salva).</div>
+  <div class="muted">
+    Histórico fica salvo por dia (entrada/saída). O valor da hora extra é só para cálculo (não salva).
+  </div>
 </div>
 
 <div class="card">
-  <form method="get" action="{{ url_for('week') }}" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
-    <div style="min-width:260px; flex:1;">
-      <label>Funcionária</label>
-      <select name="employee_id">
-        {% for e in employees %}
-          <option value="{{ e.id }}" {% if e.id == selected_emp.id %}selected{% endif %}>{{ e.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div style="min-width:220px;">
-      <label>Semana (segunda)</label>
-      <input type="date" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
-    </div>
-    <div style="min-width:220px;">
-      <label>Valor hora extra</label>
-      <input name="rate" placeholder="Ex: 12,50" value="{{ rate }}">
-    </div>
-    <div>
-      <button class="btn btn-primary" type="submit">Carregar</button>
+  <form method="get" action="{{ url_for('week') }}">
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; align-items:end;">
+      <div>
+        <label>Funcionária</label>
+        <select name="employee_id">
+          {% for e in employees %}
+            <option value="{{ e.id }}" {% if e.id == selected_emp.id %}selected{% endif %}>{{ e.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label>Semana (segunda)</label>
+        <input type="date" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
+      </div>
+
+      <div>
+        <label>Valor hora extra</label>
+        <input type="text" name="rate" value="{{ rate }}" placeholder="Ex: 12,50">
+      </div>
+
+      <div>
+        <button class="btn btn-primary" type="submit">Carregar</button>
+      </div>
     </div>
   </form>
 </div>
@@ -36,51 +43,63 @@
     <input type="hidden" name="employee_id" value="{{ selected_emp.id }}">
     <input type="hidden" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
 
-    <table>
-      <thead>
-        <tr>
-          <th>Dia</th>
-          <th>Data</th>
-          <th>Entrada</th>
-          <th>Saída</th>
-          <th>Almoço</th>
-          <th>Folga?</th>
-          <th>Trabalhado</th>
-          <th>Saldo (dia)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for d in days %}
-        {% set key = d.date.strftime('%Y-%m-%d') %}
-        <tr>
-          <td><strong>{{ d.label }}</strong></td>
-          <td class="muted">{{ key }}</td>
-          <td><input type="time" name="entry_{{ key }}" value="{{ d.entry }}"></td>
-          <td><input type="time" name="exit_{{ key }}" value="{{ d.exit }}"></td>
-          <td style="min-width:160px;">
-            <select name="lunch_{{ key }}">
-              <option value="0"  {% if d.lunch_minutes == 0 %}selected{% endif %}>0 min</option>
-              <option value="30" {% if d.lunch_minutes == 30 %}selected{% endif %}>30 min</option>
-              <option value="60" {% if d.lunch_minutes == 60 %}selected{% endif %}>1 hora</option>
-            </select>
-          </td>
-          <td style="text-align:center;">
-            <input type="checkbox" name="off_{{ key }}" {% if d.day_off %}checked{% endif %} style="width:auto;">
-          </td>
-          <td><strong>{{ d.worked }}</strong></td>
-          <td>
-            {% if d.balance.startswith('-') %}
-              <span class="neg">{{ d.balance }}</span>
-            {% else %}
-              <span class="pos">{{ d.balance }}</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Dia</th>
+            <th>Data</th>
+            <th>Entrada</th>
+            <th>Saída</th>
+            <th>Almoço</th>
+            <th>Folga?</th>
+            <th>Trabalhado</th>
+            <th>Saldo (dia)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in days %}
+          {% set key = d.date.strftime('%Y-%m-%d') %}
+          <tr>
+            <td><strong>{{ d.label }}</strong></td>
+            <td>{{ key }}</td>
 
-    <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <td>
+              <input type="time" name="entry_{{ key }}" value="{{ d.entry }}">
+            </td>
+
+            <td>
+              <input type="time" name="exit_{{ key }}" value="{{ d.exit }}">
+            </td>
+
+            <td>
+              <select name="lunch_{{ key }}">
+                <option value="0" {% if d.lunch_minutes == 0 %}selected{% endif %}>0 min</option>
+                <option value="30" {% if d.lunch_minutes == 30 %}selected{% endif %}>30 min</option>
+                <option value="60" {% if d.lunch_minutes == 60 %}selected{% endif %}>1 hora</option>
+              </select>
+            </td>
+
+            <td style="text-align:center;">
+              <input type="checkbox" name="off_{{ key }}" {% if d.day_off %}checked{% endif %} style="width:auto;">
+            </td>
+
+            <td><strong>{{ d.worked }}</strong></td>
+
+            <td>
+              {% if d.balance.startswith('-') %}
+                <span class="neg">{{ d.balance }}</span>
+              {% else %}
+                <span class="pos">{{ d.balance }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
       <button class="btn btn-primary" type="submit">Salvar Semana</button>
     </div>
   </form>
@@ -88,38 +107,84 @@
   <form method="post" action="{{ url_for('week_reset') }}" style="margin-top:10px;">
     <input type="hidden" name="employee_id" value="{{ selected_emp.id }}">
     <input type="hidden" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
-    <button class="btn btn-danger" type="submit" onclick="return confirm('Tem certeza? Vai apagar as marcações da semana e zerar ajustes.');">
-      Zerar Semana
-    </button>
+    <button class="btn btn-danger" type="submit">Zerar Semana</button>
   </form>
 </div>
 
 <div class="card">
   <h3>Resultados</h3>
-  <div class="muted">Semana: <strong>{{ week_start_date }}</strong> até <strong>{{ week_end_date }}</strong></div>
 
-  <div style="margin-top:10px;">
-    <div><span class="badge">Total trabalhado (líquido)</span> <strong>{{ total_net }}</strong></div>
-    <div style="margin-top:6px;">
-      <span class="badge">Saldo final da semana</span>
-      {% if week_balance.startswith('-') %}
-        <span class="neg"><strong>{{ week_balance }}</strong></span>
-      {% else %}
-        <span class="pos"><strong>{{ week_balance }}</strong></span>
-      {% endif %}
-      <div class="muted" style="margin-top:6px;">
-        Se saldo &gt; 00:00, paga extra. Se saldo &lt; 00:00, faltou horas.
+  <div class="muted" style="margin-bottom:10px;">
+    Semana: <strong>{{ week_start_date }}</strong> até <strong>{{ week_end_date }}</strong>
+  </div>
+
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
+    <div class="card" style="margin:0;">
+      <div class="muted">Horas normais (sem folga)</div>
+      <div><strong>{{ normal_minutes }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Horas em dias de folga</div>
+      <div><strong>{{ offday_extra }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Total trabalhado (líquido)</div>
+      <div><strong>{{ total_net }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Meta semanal</div>
+      <div><strong>{{ total_expected }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Falta para meta</div>
+      <div>
+        {% if week_remaining != '00:00' %}
+          <span class="neg"><strong>{{ week_remaining }}</strong></span>
+        {% else %}
+          <strong>{{ week_remaining }}</strong>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Hora extra total</div>
+      <div>
+        {% if week_extra != '00:00' %}
+          <span class="pos"><strong>{{ week_extra }}</strong></span>
+        {% else %}
+          <strong>{{ week_extra }}</strong>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Saldo final da semana</div>
+      <div>
+        {% if week_balance.startswith('-') %}
+          <span class="neg"><strong>{{ week_balance }}</strong></span>
+        {% else %}
+          <span class="pos"><strong>{{ week_balance }}</strong></span>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <hr style="border:none;border-top:1px solid #e5e7eb;margin:14px 0;">
+  <div class="muted" style="margin-top:12px;">
+    Regra aplicada: horas trabalhadas em dias marcados como <strong>folga</strong> contam <strong>100% como extra</strong> e não entram para completar a meta semanal.
+  </div>
 
-  <h4>Cálculo de Pagamento (uso interno)</h4>
+  <hr style="margin:18px 0;">
+
+  <h3>Cálculo de Pagamento (uso interno)</h3>
   <div class="muted">
     Para recalcular, preencha “Valor hora extra” e clique em “Carregar”. (Não salva.)
   </div>
-  <div style="margin-top:10px;">
+
+  <div style="margin-top:12px; font-size:1.2rem;">
     <strong>Total a pagar:</strong> R$ {{ total_pay }}
   </div>
 </div>
