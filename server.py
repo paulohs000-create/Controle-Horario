@@ -353,12 +353,9 @@ def expected_minutes_for_day(employee: Employee, day_off_flag: bool) -> int:
     return int(employee.daily_minutes or 0)
 
 
-def expected_minutes_for_week(db, employee: Employee, ws: date, we: date) -> int:
+def expected_minutes_for_week(employee: Employee) -> int:
     """
-    Regra semanal:
-    - Meta semanal é fixa
-    - Folga NÃO reduz as 40 horas
-    - Regina freelancer fica com 0 semanal
+    Meta semanal fixa.
     """
     weekly = int(employee.weekly_minutes or 0)
     if weekly <= 0:
@@ -368,17 +365,22 @@ def expected_minutes_for_week(db, employee: Employee, ws: date, we: date) -> int
 
 def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
     """
-    Regras:
-    - Dia marcado como folga:
-      * esperado do dia = 0
-      * se trabalhar, tudo vai para extra
-      * essas horas NÃO contam para bater a meta semanal
+    Regra final:
+    - Dia com folga:
+      todo o tempo trabalhado conta como hora extra
     - Dia normal:
-      * horas contam para cumprir a meta semanal
-    - Meta semanal é fixa (weekly_minutes)
+      só conta como hora extra o que passar da carga diária
+    - Horas abaixo de 8h em um dia não reduzem as horas extras de outros dias
+    - Meta semanal continua fixa para exibir 'falta para meta'
     """
-    normal_minutes = 0
+    daily_target = int(employee.daily_minutes or 0)
+    weekly_target = int(employee.weekly_minutes or 0)
+
+    total_worked_minutes = 0
+    extra_minutes = 0
     offday_extra_minutes = 0
+    normal_day_extra_minutes = 0
+    normal_minutes_for_meta = 0
 
     d = ws
     while d <= we:
@@ -387,33 +389,36 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         lunch_d = int(adj.lunch_minutes or 0) if gross_d > 0 else 0
         net_d = net_minutes_for_day(gross_d, lunch_d)
 
+        total_worked_minutes += net_d
+
         if bool(adj.day_off):
+            # tudo vira extra
+            extra_minutes += net_d
             offday_extra_minutes += net_d
         else:
-            normal_minutes += net_d
+            normal_minutes_for_meta += net_d
+            if daily_target > 0:
+                day_extra = max(0, net_d - daily_target)
+            else:
+                day_extra = 0
+            extra_minutes += day_extra
+            normal_day_extra_minutes += day_extra
 
         d += timedelta(days=1)
 
-    weekly_target = int(employee.weekly_minutes or 0)
-
-    if weekly_target <= 0:
-        extra_from_normal_days = 0
-        missing_minutes = 0
+    if weekly_target > 0:
+        missing_minutes = max(0, weekly_target - normal_minutes_for_meta)
     else:
-        extra_from_normal_days = max(0, normal_minutes - weekly_target)
-        missing_minutes = max(0, weekly_target - normal_minutes)
-
-    total_extra_minutes = offday_extra_minutes + extra_from_normal_days
-    total_all_minutes = normal_minutes + offday_extra_minutes
+        missing_minutes = 0
 
     return {
-        "normal_minutes": normal_minutes,
-        "offday_extra_minutes": offday_extra_minutes,
+        "total_worked_minutes": total_worked_minutes,
         "weekly_target": weekly_target,
-        "extra_from_normal_days": extra_from_normal_days,
         "missing_minutes": missing_minutes,
-        "total_extra_minutes": total_extra_minutes,
-        "total_all_minutes": total_all_minutes,
+        "extra_minutes": extra_minutes,
+        "offday_extra_minutes": offday_extra_minutes,
+        "normal_day_extra_minutes": normal_day_extra_minutes,
+        "normal_minutes_for_meta": normal_minutes_for_meta,
     }
 
 
@@ -648,11 +653,10 @@ def dashboard():
 
             week_calc = calculate_week_minutes(db, e, start_week, end_week)
 
-            net_week = week_calc["total_all_minutes"]
+            net_week = week_calc["total_worked_minutes"]
             expected_week = week_calc["weekly_target"]
             week_remaining = week_calc["missing_minutes"]
-            week_extra = week_calc["total_extra_minutes"]
-            week_balance = week_extra - week_remaining
+            week_extra = week_calc["extra_minutes"]
 
             status.append(
                 {
@@ -679,17 +683,16 @@ def dashboard():
                     "week_expected": minutes_to_hhmm(expected_week),
                     "week_remaining": minutes_to_hhmm(week_remaining),
                     "week_extra": minutes_to_hhmm(week_extra),
-                    "week_balance": minutes_to_hhmm(week_balance),
-
                     "week_offday_extra": minutes_to_hhmm(week_calc["offday_extra_minutes"]),
-                    "week_normal_minutes": minutes_to_hhmm(week_calc["normal_minutes"]),
+                    "week_normal_extra": minutes_to_hhmm(week_calc["normal_day_extra_minutes"]),
 
-                    # compatibilidade
+                    # compatibilidade com dashboard antigo
                     "net_today": minutes_to_hhmm(net_today),
                     "expected_today": minutes_to_hhmm(expected_today),
                     "balance_today": minutes_to_hhmm(day_balance),
                     "net_week": minutes_to_hhmm(net_week),
                     "expected_week": minutes_to_hhmm(expected_week),
+                    "week_balance": minutes_to_hhmm(week_extra),
                 }
             )
 
@@ -928,13 +931,13 @@ def week():
 
         week_calc = calculate_week_minutes(db, selected_emp, ws, we)
 
-        total_net = week_calc["total_all_minutes"]
+        total_net = week_calc["total_worked_minutes"]
         total_expected = week_calc["weekly_target"]
         week_remaining = week_calc["missing_minutes"]
-        week_extra = week_calc["total_extra_minutes"]
-        week_balance_value = week_extra - week_remaining
+        week_extra = week_calc["extra_minutes"]
         offday_extra = week_calc["offday_extra_minutes"]
-        normal_minutes = week_calc["normal_minutes"]
+        normal_day_extra = week_calc["normal_day_extra_minutes"]
+        normal_minutes_for_meta = week_calc["normal_minutes_for_meta"]
 
         rate = parse_money(request.args.get("rate") or "")
         total_pay = (week_extra / 60.0) * rate if rate > 0 else 0.0
@@ -951,9 +954,10 @@ def week():
             total_expected=minutes_to_hhmm(total_expected),
             week_remaining=minutes_to_hhmm(week_remaining),
             week_extra=minutes_to_hhmm(week_extra),
-            week_balance=minutes_to_hhmm(week_balance_value),
+            week_balance=minutes_to_hhmm(week_extra),  # compatibilidade / exibição
             offday_extra=minutes_to_hhmm(offday_extra),
-            normal_minutes=minutes_to_hhmm(normal_minutes),
+            normal_day_extra=minutes_to_hhmm(normal_day_extra),
+            normal_minutes_for_meta=minutes_to_hhmm(normal_minutes_for_meta),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
             total_pay=f"{total_pay:.2f}".replace(".", ","),
         )
