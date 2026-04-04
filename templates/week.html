@@ -120,8 +120,13 @@
 
   <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
     <div class="card" style="margin:0;">
-      <div class="muted">Horas normais (sem folga)</div>
-      <div><strong>{{ normal_minutes }}</strong></div>
+      <div class="muted">Horas normais p/ meta</div>
+      <div><strong>{{ normal_minutes_for_meta }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Extra em dias normais</div>
+      <div><strong>{{ normal_day_extra }}</strong></div>
     </div>
 
     <div class="card" style="margin:0;">
@@ -160,21 +165,10 @@
         {% endif %}
       </div>
     </div>
-
-    <div class="card" style="margin:0;">
-      <div class="muted">Saldo final da semana</div>
-      <div>
-        {% if week_balance.startswith('-') %}
-          <span class="neg"><strong>{{ week_balance }}</strong></span>
-        {% else %}
-          <span class="pos"><strong>{{ week_balance }}</strong></span>
-        {% endif %}
-      </div>
-    </div>
   </div>
 
   <div class="muted" style="margin-top:12px;">
-    Regra aplicada: horas trabalhadas em dias marcados como <strong>folga</strong> contam <strong>100% como extra</strong> e não entram para completar a meta semanal.
+    Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta <strong>100% como extra</strong>. Em dias normais, conta como extra apenas o que passar de <strong>8h</strong>.
   </div>
 
   <hr style="margin:18px 0;">
