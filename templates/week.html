@@ -121,11 +121,11 @@
   <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
     <div class="card" style="margin:0;">
       <div class="muted">Horas normais p/ meta</div>
-      <div><strong>{{ normal_minutes_for_meta }}</strong></div>
+      <div><strong>{{ normal_minutes }}</strong></div>
     </div>
 
     <div class="card" style="margin:0;">
-      <div class="muted">Extra em dias normais</div>
+      <div class="muted">Extra por passar de 40h</div>
       <div><strong>{{ normal_day_extra }}</strong></div>
     </div>
 
@@ -168,7 +168,7 @@
   </div>
 
   <div class="muted" style="margin-top:12px;">
-    Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta <strong>100% como extra</strong>. Em dias normais, conta como extra apenas o que passar de <strong>8h</strong>.
+    Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta <strong>100% como extra</strong>. Em dias normais, só há hora extra quando o total semanal ultrapassa <strong>40h</strong>.
   </div>
 
   <hr style="margin:18px 0;">
