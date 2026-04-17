@@ -53,6 +53,7 @@
             <th>Saída</th>
             <th>Almoço</th>
             <th>Folga?</th>
+            <th>Pago?</th>
             <th>Trabalhado</th>
             <th>Saldo (dia)</th>
           </tr>
@@ -84,6 +85,10 @@
               <input type="checkbox" name="off_{{ key }}" {% if d.day_off %}checked{% endif %} style="width:auto;">
             </td>
 
+            <td style="text-align:center;">
+              <input type="checkbox" name="paid_{{ key }}" {% if d.offday_paid %}checked{% endif %} style="width:auto;">
+            </td>
+
             <td><strong>{{ d.worked }}</strong></td>
 
             <td>
@@ -97,6 +102,10 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+
+    <div class="muted" style="margin-top:10px;">
+      <strong>Pago?</strong> use somente para dias marcados como <strong>Folga</strong>, quando essas horas já foram pagas separadamente e não devem entrar no total da semana.
     </div>
 
     <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -130,12 +139,17 @@
     </div>
 
     <div class="card" style="margin:0;">
-      <div class="muted">Horas em dias de folga</div>
-      <div><strong>{{ offday_extra }}</strong></div>
+      <div class="muted">Horas em folga (pendentes)</div>
+      <div><strong>{{ unpaid_offday_extra }}</strong></div>
     </div>
 
     <div class="card" style="margin:0;">
-      <div class="muted">Total trabalhado (líquido)</div>
+      <div class="muted">Horas em folga (já pagas)</div>
+      <div><strong>{{ paid_offday_extra }}</strong></div>
+    </div>
+
+    <div class="card" style="margin:0;">
+      <div class="muted">Total trabalhado considerado</div>
       <div><strong>{{ total_net }}</strong></div>
     </div>
 
@@ -168,7 +182,7 @@
   </div>
 
   <div class="muted" style="margin-top:12px;">
-    Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta <strong>100% como extra</strong>. Em dias normais, só há hora extra quando o total semanal ultrapassa <strong>40h</strong>.
+    Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta como extra. Se marcar <strong>Pago?</strong>, essas horas são tratadas como já pagas e ficam fora do total da semana e do total a pagar.
   </div>
 
   <hr style="margin:18px 0;">
