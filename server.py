@@ -175,6 +175,7 @@ class DailyAdjustment(Base):
     day_local = Column(String(10), nullable=False)  # YYYY-MM-DD
     lunch_minutes = Column(Integer, default=60)      # 0 / 30 / 60
     day_off = Column(Boolean, default=False)
+    offday_paid = Column(Boolean, default=False)
 
     employee = relationship("Employee", back_populates="adjustments")
 
@@ -184,12 +185,18 @@ class DailyAdjustment(Base):
 # -----------------------------------------------------------------------------
 def ensure_schema_upgrades():
     inspector = inspect(engine)
-    columns = {c["name"] for c in inspector.get_columns("admin_users")}
 
-    if "role" not in columns:
+    admin_cols = {c["name"] for c in inspector.get_columns("admin_users")}
+    if "role" not in admin_cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE admin_users ADD COLUMN role VARCHAR(20) DEFAULT 'admin';"))
             conn.execute(text("UPDATE admin_users SET role='admin' WHERE role IS NULL;"))
+
+    daily_adjustment_cols = {c["name"] for c in inspector.get_columns("daily_adjustments")}
+    if "offday_paid" not in daily_adjustment_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE daily_adjustments ADD COLUMN offday_paid BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("UPDATE daily_adjustments SET offday_paid = FALSE WHERE offday_paid IS NULL;"))
 
 
 def ensure_db():
@@ -302,7 +309,13 @@ def get_or_create_adjustment(db, emp_id: int, day_local: date) -> DailyAdjustmen
     ).scalar_one_or_none()
     if adj:
         return adj
-    adj = DailyAdjustment(employee_id=emp_id, day_local=key, lunch_minutes=60, day_off=False)
+    adj = DailyAdjustment(
+        employee_id=emp_id,
+        day_local=key,
+        lunch_minutes=60,
+        day_off=False,
+        offday_paid=False,
+    )
     db.add(adj)
     db.flush()
     return adj
@@ -353,16 +366,19 @@ def expected_minutes_for_week(employee: Employee) -> int:
 
 def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
     """
-    Regra final:
-    - Dia com folga: todo o trabalhado conta como hora extra
-    - Dia normal: soma tudo na semana
-    - Hora extra em dia normal só existe se o total semanal passar de 40h
+    Regra:
+    - Dia com folga:
+      * se NÃO estiver pago, todo o trabalhado conta como extra
+      * se estiver pago, não entra no total da semana nem no total a pagar
+    - Dia normal:
+      * só paga extra se o total semanal normal ultrapassar 40h
     """
     weekly_target = int(employee.weekly_minutes or 0)
 
     total_worked_minutes = 0
     normal_minutes = 0
-    offday_extra_minutes = 0
+    unpaid_offday_extra_minutes = 0
+    paid_offday_extra_minutes = 0
 
     d = ws
     while d <= we:
@@ -371,12 +387,15 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         lunch_d = int(adj.lunch_minutes or 0) if gross_d > 0 else 0
         net_d = net_minutes_for_day(gross_d, lunch_d)
 
-        total_worked_minutes += net_d
-
         if bool(adj.day_off):
-            offday_extra_minutes += net_d
+            if bool(adj.offday_paid):
+                paid_offday_extra_minutes += net_d
+            else:
+                unpaid_offday_extra_minutes += net_d
+                total_worked_minutes += net_d
         else:
             normal_minutes += net_d
+            total_worked_minutes += net_d
 
         d += timedelta(days=1)
 
@@ -387,13 +406,14 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         extra_from_normal_days = 0
         missing_minutes = 0
 
-    total_extra_minutes = offday_extra_minutes + extra_from_normal_days
+    total_extra_minutes = unpaid_offday_extra_minutes + extra_from_normal_days
 
     return {
         "total_worked_minutes": total_worked_minutes,
         "weekly_target": weekly_target,
         "normal_minutes": normal_minutes,
-        "offday_extra_minutes": offday_extra_minutes,
+        "unpaid_offday_extra_minutes": unpaid_offday_extra_minutes,
+        "paid_offday_extra_minutes": paid_offday_extra_minutes,
         "extra_from_normal_days": extra_from_normal_days,
         "missing_minutes": missing_minutes,
         "total_extra_minutes": total_extra_minutes,
@@ -655,7 +675,8 @@ def dashboard():
                     "week_expected": minutes_to_hhmm(expected_week),
                     "week_remaining": minutes_to_hhmm(week_remaining),
                     "week_extra": minutes_to_hhmm(week_extra),
-                    "week_offday_extra": minutes_to_hhmm(week_calc["offday_extra_minutes"]),
+                    "week_offday_extra": minutes_to_hhmm(week_calc["unpaid_offday_extra_minutes"]),
+                    "week_paid_offday_extra": minutes_to_hhmm(week_calc["paid_offday_extra_minutes"]),
                     "week_normal_extra": minutes_to_hhmm(week_calc["extra_from_normal_days"]),
 
                     # compatibilidade
@@ -895,6 +916,7 @@ def week():
                 "exit": out_local.strftime("%H:%M") if out_local else "",
                 "lunch_minutes": int(adj.lunch_minutes or 0),
                 "day_off": bool(adj.day_off),
+                "offday_paid": bool(adj.offday_paid),
                 "worked": minutes_to_hhmm(net),
                 "balance": minutes_to_hhmm(bal),
             })
@@ -907,7 +929,8 @@ def week():
         total_expected = week_calc["weekly_target"]
         week_remaining = week_calc["missing_minutes"]
         week_extra = week_calc["total_extra_minutes"]
-        offday_extra = week_calc["offday_extra_minutes"]
+        unpaid_offday_extra = week_calc["unpaid_offday_extra_minutes"]
+        paid_offday_extra = week_calc["paid_offday_extra_minutes"]
         normal_day_extra = week_calc["extra_from_normal_days"]
         normal_minutes = week_calc["normal_minutes"]
 
@@ -927,7 +950,8 @@ def week():
             week_remaining=minutes_to_hhmm(week_remaining),
             week_extra=minutes_to_hhmm(week_extra),
             week_balance=minutes_to_hhmm(week_extra),
-            offday_extra=minutes_to_hhmm(offday_extra),
+            unpaid_offday_extra=minutes_to_hhmm(unpaid_offday_extra),
+            paid_offday_extra=minutes_to_hhmm(paid_offday_extra),
             normal_day_extra=minutes_to_hhmm(normal_day_extra),
             normal_minutes=minutes_to_hhmm(normal_minutes),
             rate=str(rate).rstrip("0").rstrip(".") if rate else "",
@@ -960,12 +984,14 @@ def week_save():
             exit_ = request.form.get(f"exit_{key}", "")
             lunch = request.form.get(f"lunch_{key}", "60")
             day_off = request.form.get(f"off_{key}") == "on"
+            offday_paid = request.form.get(f"paid_{key}") == "on"
 
             replace_day_punches(db, emp_id, d, entry, exit_)
 
             adj = get_or_create_adjustment(db, emp_id, d)
             adj.lunch_minutes = parse_lunch(lunch)
             adj.day_off = bool(day_off)
+            adj.offday_paid = bool(offday_paid) if day_off else False
 
             d += timedelta(days=1)
 
@@ -1006,6 +1032,7 @@ def week_reset():
             if adj:
                 adj.lunch_minutes = 60
                 adj.day_off = False
+                adj.offday_paid = False
             d += timedelta(days=1)
 
         db.commit()
