@@ -176,6 +176,7 @@ class DailyAdjustment(Base):
     lunch_minutes = Column(Integer, default=60)      # 0 / 30 / 60
     day_off = Column(Boolean, default=False)
     offday_paid = Column(Boolean, default=False)
+    justified = Column(Boolean, default=False)
 
     employee = relationship("Employee", back_populates="adjustments")
 
@@ -197,6 +198,11 @@ def ensure_schema_upgrades():
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE daily_adjustments ADD COLUMN offday_paid BOOLEAN DEFAULT FALSE;"))
             conn.execute(text("UPDATE daily_adjustments SET offday_paid = FALSE WHERE offday_paid IS NULL;"))
+
+    if "justified" not in daily_adjustment_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE daily_adjustments ADD COLUMN justified BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("UPDATE daily_adjustments SET justified = FALSE WHERE justified IS NULL;"))
 
 
 def ensure_db():
@@ -315,6 +321,7 @@ def get_or_create_adjustment(db, emp_id: int, day_local: date) -> DailyAdjustmen
         lunch_minutes=60,
         day_off=False,
         offday_paid=False,
+        justified=False,
     )
     db.add(adj)
     db.flush()
@@ -405,6 +412,8 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
       o trabalhado entra como extra.
     - Se marcar Pago?, essas horas de folga ficam registradas como
       já pagas e saem do total a pagar.
+    - Se marcar Justificado?, em dia normal de trabalho, o dia conta
+      como 8h para a meta, mas não gera hora extra.
     - Em dias normais sem Folga marcada, só paga extra se o total
       normal/creditado passar de 40h.
     """
@@ -424,7 +433,15 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         net_d = net_minutes_for_day(gross_d, lunch_d)
         regular_workday = is_regular_workday(employee, d)
 
-        if bool(adj.day_off):
+        if bool(adj.justified):
+            # Falta/saída justificada (médico, exame, ausência abonada):
+            # em dia normal de trabalho, credita o dia para a meta,
+            # mas não gera hora extra nem desconto.
+            if regular_workday:
+                normal_minutes += daily_target
+                total_worked_minutes += daily_target
+
+        elif bool(adj.day_off):
             # Feriado/folga marcada em dia normal de trabalho:
             # mantém o crédito do dia para não descontar da meta semanal.
             if regular_workday:
@@ -594,6 +611,7 @@ def kiosk():
                 "can_out": can_punch_out(last),
                 "lunch_minutes": int(adj.lunch_minutes or 0),
                 "day_off": bool(adj.day_off),
+                "justified": bool(adj.justified),
                 "today_in": to_local(first_in) if first_in else None,
                 "today_out": to_local(last_out) if last_out else None,
             })
@@ -953,7 +971,11 @@ def week():
             lunch_effective = int(adj.lunch_minutes or 0) if gross > 0 else 0
             net = net_minutes_for_day(gross, lunch_effective)
             exp = expected_minutes_for_day(selected_emp, bool(adj.day_off), d)
-            bal = net - exp
+            if bool(adj.justified) and is_regular_workday(selected_emp, d):
+                # Justificado abona o dia: não mostra falta no saldo diário.
+                bal = 0
+            else:
+                bal = net - exp
 
             first_in, last_out = get_day_first_in_and_last_out(db, selected_emp.id, d)
             in_local = to_local(first_in) if first_in else None
@@ -967,6 +989,7 @@ def week():
                 "lunch_minutes": int(adj.lunch_minutes or 0),
                 "day_off": bool(adj.day_off),
                 "offday_paid": bool(adj.offday_paid),
+                "justified": bool(adj.justified),
                 "worked": minutes_to_hhmm(net),
                 "balance": minutes_to_hhmm(bal),
             })
@@ -1035,6 +1058,7 @@ def week_save():
             lunch = request.form.get(f"lunch_{key}", "60")
             day_off = request.form.get(f"off_{key}") == "on"
             offday_paid = request.form.get(f"paid_{key}") == "on"
+            justified = request.form.get(f"justified_{key}") == "on"
 
             replace_day_punches(db, emp_id, d, entry, exit_)
 
@@ -1042,6 +1066,7 @@ def week_save():
             adj.lunch_minutes = parse_lunch(lunch)
             adj.day_off = bool(day_off)
             adj.offday_paid = bool(offday_paid) if day_off else False
+            adj.justified = bool(justified) if not day_off else False
 
             d += timedelta(days=1)
 
@@ -1083,6 +1108,7 @@ def week_reset():
                 adj.lunch_minutes = 60
                 adj.day_off = False
                 adj.offday_paid = False
+                adj.justified = False
             d += timedelta(days=1)
 
         db.commit()
