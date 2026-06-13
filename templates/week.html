@@ -54,6 +54,7 @@
             <th>Almoço</th>
             <th>Folga?</th>
             <th>Pago?</th>
+            <th>Justificado?</th>
             <th>Trabalhado</th>
             <th>Saldo (dia)</th>
           </tr>
@@ -89,6 +90,10 @@
               <input type="checkbox" name="paid_{{ key }}" {% if d.offday_paid %}checked{% endif %} style="width:auto;">
             </td>
 
+            <td style="text-align:center;">
+              <input type="checkbox" name="justified_{{ key }}" {% if d.justified %}checked{% endif %} style="width:auto;">
+            </td>
+
             <td><strong>{{ d.worked }}</strong></td>
 
             <td>
@@ -105,7 +110,8 @@
     </div>
 
     <div class="muted" style="margin-top:10px;">
-      <strong>Pago?</strong> use somente para dias marcados como <strong>Folga</strong>, quando essas horas já foram pagas separadamente e não devem entrar no total da semana.
+      <strong>Pago?</strong> use somente para dias marcados como <strong>Folga</strong>, quando essas horas já foram pagas separadamente e não devem entrar no total da semana.<br>
+      <strong>Justificado?</strong> use para médico, exame ou falta abonada. O dia conta para a meta, mas não gera hora extra.
     </div>
 
     <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -185,6 +191,7 @@
     Regra aplicada: em dias marcados como <strong>folga</strong>, todo o trabalhado conta como extra.
     Se a folga for em um dia normal de trabalho da funcionária, o dia também continua contando como 8h para a meta semanal
     (ex.: feriado). Se marcar <strong>Pago?</strong>, essas horas trabalhadas na folga são tratadas como já pagas e ficam fora do total a pagar.
+    Se marcar <strong>Justificado?</strong>, o dia conta para a meta semanal, mas não gera hora extra.
   </div>
 
   <hr style="margin:18px 0;">
