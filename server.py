@@ -351,8 +351,33 @@ def net_minutes_for_day(gross_minutes: int, lunch_minutes: int) -> int:
     return max(0, gross_minutes - max(0, lunch_minutes))
 
 
-def expected_minutes_for_day(employee: Employee, day_off_flag: bool) -> int:
+def employee_workdays(employee: Employee) -> set[int]:
+    """
+    Dias normais de trabalho por funcionária.
+    Python: segunda=0, terça=1, quarta=2, quinta=3, sexta=4, sábado=5, domingo=6.
+    """
+    name = (employee.name or "").strip().lower()
+
+    schedules = {
+        "marly": {0, 1, 2, 3, 4},          # segunda a sexta
+        "marli": {0, 1, 2, 3, 4},          # proteção se escreverem Marli
+        "luziane": {1, 2, 3, 4, 5},        # terça a sábado
+        "suely": {6, 0, 1, 2, 3},          # domingo a quinta
+        "sueli": {6, 0, 1, 2, 3},          # proteção para o nome já cadastrado
+    }
+
+    # Padrão para funcionárias sem regra específica: segunda a sexta.
+    return schedules.get(name, {0, 1, 2, 3, 4})
+
+
+def is_regular_workday(employee: Employee, d_local: date) -> bool:
+    return d_local.weekday() in employee_workdays(employee)
+
+
+def expected_minutes_for_day(employee: Employee, day_off_flag: bool, d_local: date | None = None) -> int:
     if day_off_flag:
+        return 0
+    if d_local is not None and not is_regular_workday(employee, d_local):
         return 0
     return int(employee.daily_minutes or 0)
 
@@ -367,13 +392,24 @@ def expected_minutes_for_week(employee: Employee) -> int:
 def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
     """
     Regra:
-    - Dia com folga:
-      * se NÃO estiver pago, todo o trabalhado conta como extra
-      * se estiver pago, não entra no total da semana nem no total a pagar
-    - Dia normal:
-      * só paga extra se o total semanal normal ultrapassar 40h
+    - Cada funcionária tem dias normais de trabalho:
+      * Marly/Marli: segunda a sexta
+      * Luziane: terça a sábado
+      * Suely/Sueli: domingo a quinta
+    - Se marcar Folga em um dia que normalmente seria de trabalho
+      (ex.: feriado numa quarta para a Marly), o dia continua contando
+      como 8h para a meta semanal e as horas realmente trabalhadas
+      entram como extra.
+    - Se marcar Folga em um dia que já é folga normal da funcionária
+      (ex.: sábado para a Marly), não adiciona 8h na meta; somente
+      o trabalhado entra como extra.
+    - Se marcar Pago?, essas horas de folga ficam registradas como
+      já pagas e saem do total a pagar.
+    - Em dias normais sem Folga marcada, só paga extra se o total
+      normal/creditado passar de 40h.
     """
     weekly_target = int(employee.weekly_minutes or 0)
+    daily_target = int(employee.daily_minutes or 0)
 
     total_worked_minutes = 0
     normal_minutes = 0
@@ -386,16 +422,30 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         gross_d = worked_minutes_gross_for_day(db, employee.id, d)
         lunch_d = int(adj.lunch_minutes or 0) if gross_d > 0 else 0
         net_d = net_minutes_for_day(gross_d, lunch_d)
+        regular_workday = is_regular_workday(employee, d)
 
         if bool(adj.day_off):
+            # Feriado/folga marcada em dia normal de trabalho:
+            # mantém o crédito do dia para não descontar da meta semanal.
+            if regular_workday:
+                normal_minutes += daily_target
+                total_worked_minutes += daily_target
+
+            # O que foi trabalhado na folga é extra.
             if bool(adj.offday_paid):
                 paid_offday_extra_minutes += net_d
             else:
                 unpaid_offday_extra_minutes += net_d
                 total_worked_minutes += net_d
         else:
-            normal_minutes += net_d
-            total_worked_minutes += net_d
+            if regular_workday:
+                normal_minutes += net_d
+                total_worked_minutes += net_d
+            else:
+                # Dia fora da escala, mesmo sem marcar Folga, não entra na meta.
+                # Trata como extra pendente para evitar perder pagamento por esquecimento.
+                unpaid_offday_extra_minutes += net_d
+                total_worked_minutes += net_d
 
         d += timedelta(days=1)
 
@@ -638,7 +688,7 @@ def dashboard():
             lunch_today = int(adj.lunch_minutes or 0) if gross_today > 0 else 0
             net_today = net_minutes_for_day(gross_today, lunch_today)
 
-            expected_today = expected_minutes_for_day(e, bool(adj.day_off))
+            expected_today = expected_minutes_for_day(e, bool(adj.day_off), today_local)
             day_balance = net_today - expected_today
             day_extra = max(0, day_balance)
             day_missing = max(0, expected_today - net_today)
@@ -838,7 +888,7 @@ def report():
 
                 lunch_d = int(adj_d.lunch_minutes or 0) if gross_d > 0 else 0
                 net_d = net_minutes_for_day(gross_d, lunch_d)
-                exp_d = expected_minutes_for_day(e, bool(adj_d.day_off))
+                exp_d = expected_minutes_for_day(e, bool(adj_d.day_off), d)
 
                 total_gross += gross_d
                 total_lunch += lunch_d
@@ -902,7 +952,7 @@ def week():
             gross = worked_minutes_gross_for_day(db, selected_emp.id, d)
             lunch_effective = int(adj.lunch_minutes or 0) if gross > 0 else 0
             net = net_minutes_for_day(gross, lunch_effective)
-            exp = expected_minutes_for_day(selected_emp, bool(adj.day_off))
+            exp = expected_minutes_for_day(selected_emp, bool(adj.day_off), d)
             bal = net - exp
 
             first_in, last_out = get_day_first_in_and_last_out(db, selected_emp.id, d)
