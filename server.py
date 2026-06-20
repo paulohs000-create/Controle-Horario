@@ -101,9 +101,9 @@ def parse_lunch(v: str) -> int:
     try:
         x = int(v)
     except Exception:
-        return 60
+        return 30
     if x not in (0, 30, 60):
-        return 60
+        return 30
     return x
 
 
@@ -173,7 +173,7 @@ class DailyAdjustment(Base):
     id = Column(Integer, primary_key=True)
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=False)
     day_local = Column(String(10), nullable=False)  # YYYY-MM-DD
-    lunch_minutes = Column(Integer, default=60)      # 0 / 30 / 60
+    lunch_minutes = Column(Integer, default=30)      # 0 / 30 / 60
     day_off = Column(Boolean, default=False)
     offday_paid = Column(Boolean, default=False)
     justified = Column(Boolean, default=False)
@@ -318,7 +318,7 @@ def get_or_create_adjustment(db, emp_id: int, day_local: date) -> DailyAdjustmen
     adj = DailyAdjustment(
         employee_id=emp_id,
         day_local=key,
-        lunch_minutes=60,
+        lunch_minutes=30,
         day_off=False,
         offday_paid=False,
         justified=False,
@@ -735,6 +735,11 @@ def kiosk_prepare_punch(emp_id: int, kind: str):
             flash("Já existe uma entrada aberta hoje. Registre a saída.", "error")
             return redirect(url_for("kiosk_employee", emp_id=emp_id))
 
+        adj = get_or_create_adjustment(db, emp_id, today_local)
+        lunch_minutes = int(adj.lunch_minutes or 30)
+        if lunch_minutes not in (30, 60):
+            lunch_minutes = 30
+
         return render_template(
             "kiosk_confirm.html",
             employee=emp,
@@ -742,6 +747,7 @@ def kiosk_prepare_punch(emp_id: int, kind: str):
             label="Entrada" if kind == "IN" else "Saída",
             today_local=today_local,
             now_local=now_local,
+            lunch_minutes=lunch_minutes,
         )
     finally:
         db.close()
@@ -777,10 +783,18 @@ def kiosk_confirm_punch(emp_id: int, kind: str):
             flash("Não existe entrada aberta hoje para registrar saída.", "error")
             return redirect(url_for("kiosk_employee", emp_id=emp_id))
 
+        if kind == "OUT":
+            lunch = (request.form.get("lunch_minutes") or "30").strip()
+            adj = get_or_create_adjustment(db, emp_id, today_local)
+            adj.lunch_minutes = parse_lunch(lunch)
+
         db.add(Punch(employee_id=emp_id, kind=kind, at_utc=utcnow()))
         db.commit()
 
-        flash(f"{('Entrada' if kind == 'IN' else 'Saída')} registrada para {emp.name}.", "success")
+        if kind == "OUT":
+            flash(f"Saída registrada para {emp.name}. Almoço: {minutes_to_hhmm(adj.lunch_minutes)}.", "success")
+        else:
+            flash(f"Entrada registrada para {emp.name}.", "success")
         return redirect(url_for("kiosk"))
     finally:
         db.close()
@@ -1225,7 +1239,7 @@ def week_reset():
                 .where(DailyAdjustment.day_local == key)
             ).scalar_one_or_none()
             if adj:
-                adj.lunch_minutes = 60
+                adj.lunch_minutes = 30
                 adj.day_off = False
                 adj.offday_paid = False
                 adj.justified = False
