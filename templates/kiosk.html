@@ -2,69 +2,155 @@
 {% block title %}Tablet - Ponto{% endblock %}
 {% block content %}
 
-<div class="card">
-  <h2>Tablet (Lançamento de Ponto)</h2>
-  <div class="muted">Hoje: <strong>{{ today_local }}</strong></div>
-</div>
+<style>
+  .kiosk-page {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
 
-<div class="card">
-  <table>
-    <thead>
-      <tr>
-        <th>Funcionária</th>
-        <th>Hoje</th>
-        <th>Ações</th>
-        <th>Almoço / Folga</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in items %}
-      <tr>
-        <td style="font-size:18px;"><strong>{{ s.name }}</strong></td>
+  .kiosk-hero {
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    color: #fff;
+    border-radius: 24px;
+    padding: 28px;
+    box-shadow: 0 12px 30px rgba(37, 99, 235, .25);
+    margin-bottom: 22px;
+  }
 
-        <td>
-          <div class="muted">Entrada: <strong>{{ s.today_in.strftime('%H:%M') if s.today_in else '--:--' }}</strong></div>
-          <div class="muted">Saída: <strong>{{ s.today_out.strftime('%H:%M') if s.today_out else '--:--' }}</strong></div>
-          <div style="margin-top:6px;" class="muted">
-            Último: <strong>{{ s.last_kind if s.last_kind else '-' }}</strong>
-            {% if s.last_at_local %} ({{ s.last_at_local.strftime('%H:%M') }}){% endif %}
-          </div>
-        </td>
+  .kiosk-hero h1 {
+    font-size: 38px;
+    margin: 0 0 8px;
+    line-height: 1.1;
+  }
 
-        <td style="min-width:260px;">
-          <form method="post" action="{{ url_for('kiosk_punch', emp_id=s.id, kind='IN') }}" style="display:inline;">
-            <button class="btn btn-primary" style="font-size:18px;" {% if not s.can_in %}disabled{% endif %}>Entrada</button>
-          </form>
-          <form method="post" action="{{ url_for('kiosk_punch', emp_id=s.id, kind='OUT') }}" style="display:inline;">
-            <button class="btn btn-danger" style="font-size:18px;" {% if not s.can_out %}disabled{% endif %}>Saída</button>
-          </form>
-        </td>
+  .kiosk-hero .date {
+    font-size: 22px;
+    opacity: .95;
+  }
 
-        <td style="min-width:280px;">
-          <form method="post" action="{{ url_for('kiosk_adjust', emp_id=s.id) }}">
-            <label class="muted">Almoço</label>
-            <select name="lunch_minutes">
-              <option value="0"  {% if s.lunch_minutes == 0 %}selected{% endif %}>0 min</option>
-              <option value="30" {% if s.lunch_minutes == 30 %}selected{% endif %}>30 min</option>
-              <option value="60" {% if s.lunch_minutes == 60 %}selected{% endif %}>1 hora</option>
-            </select>
+  .employee-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 18px;
+  }
 
-            <div style="margin-top:10px;">
-              <label>
-                <input type="checkbox" name="day_off" {% if s.day_off %}checked{% endif %} style="width:auto; margin-right:6px;">
-                Dia de folga (esperado = 0)
-              </label>
-            </div>
+  .employee-card {
+    display: block;
+    text-decoration: none;
+    color: #111827;
+    background: #ffffff;
+    border-radius: 24px;
+    padding: 24px;
+    min-height: 150px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .08);
+    border: 3px solid transparent;
+    transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+  }
 
-            <div style="margin-top:10px;">
-              <button class="btn btn-gray" type="submit">Salvar</button>
-            </div>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  .employee-card:hover,
+  .employee-card:active {
+    transform: translateY(-2px);
+    border-color: #2563eb;
+    box-shadow: 0 14px 32px rgba(37, 99, 235, .18);
+  }
+
+  .employee-name {
+    font-size: 34px;
+    font-weight: 800;
+    margin-bottom: 12px;
+  }
+
+  .employee-status {
+    font-size: 18px;
+    color: #4b5563;
+    line-height: 1.45;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .status-in {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+
+  .status-out {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .status-alert {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  @media (max-width: 760px) {
+    .wrap {
+      padding: 0 10px;
+      margin-top: 12px;
+    }
+
+    .kiosk-hero {
+      padding: 22px;
+      border-radius: 22px;
+    }
+
+    .kiosk-hero h1 {
+      font-size: 30px;
+    }
+
+    .employee-grid {
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .employee-card {
+      min-height: 130px;
+      padding: 22px;
+    }
+
+    .employee-name {
+      font-size: 30px;
+    }
+  }
+</style>
+
+<div class="kiosk-page">
+  <div class="kiosk-hero">
+    <h1>Lançamento de Ponto</h1>
+    <div class="date">Hoje: <strong>{{ today_local.strftime('%d/%m/%Y') }}</strong></div>
+  </div>
+
+  <div class="employee-grid">
+    {% for s in items %}
+      <a class="employee-card" href="{{ url_for('kiosk_employee', emp_id=s.id) }}">
+        <div class="employee-name">{{ s.name }}</div>
+
+        <div class="employee-status">
+          Entrada: <strong>{{ s.today_in.strftime('%H:%M') if s.today_in else '--:--' }}</strong><br>
+          Saída: <strong>{{ s.today_out.strftime('%H:%M') if s.today_out else '--:--' }}</strong>
+        </div>
+
+        {% if s.open_today %}
+          <div class="status-pill status-in">● Em trabalho — registrar saída</div>
+        {% elif s.today_in and s.today_out %}
+          <div class="status-pill status-out">✓ Ponto de hoje concluído</div>
+        {% elif s.last_kind == 'IN' %}
+          <div class="status-pill status-alert">⚠ Entrada anterior sem saída</div>
+        {% else %}
+          <div class="status-pill status-out">Toque para registrar entrada</div>
+        {% endif %}
+      </a>
+    {% endfor %}
+  </div>
 </div>
 
 {% endblock %}
