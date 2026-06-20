@@ -50,6 +50,55 @@
     color: #111827;
   }
 
+
+  .lunch-card {
+    background: #fff7ed;
+    border: 2px solid #fed7aa;
+    border-radius: 24px;
+    padding: 22px;
+    margin-bottom: 24px;
+    text-align: left;
+  }
+
+  .lunch-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: #9a3412;
+    margin-bottom: 6px;
+  }
+
+  .lunch-subtitle {
+    font-size: 18px;
+    color: #7c2d12;
+    margin-bottom: 16px;
+  }
+
+  .lunch-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .lunch-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: #fff;
+    border: 2px solid #fdba74;
+    border-radius: 20px;
+    padding: 22px 16px;
+    font-size: 28px;
+    font-weight: 900;
+    color: #111827;
+    cursor: pointer;
+  }
+
+  .lunch-option input {
+    width: 26px;
+    height: 26px;
+  }
+
   .confirm-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -91,6 +140,10 @@
       font-size: 48px;
     }
 
+    .lunch-options {
+      grid-template-columns: 1fr;
+    }
+
     .confirm-actions {
       grid-template-columns: 1fr;
     }
@@ -107,8 +160,25 @@
       <div class="hour">{{ now_local.strftime('%H:%M') }}</div>
     </div>
 
+    {% if kind == 'OUT' %}
+      <div class="lunch-card">
+        <div class="lunch-title">Seu almoço foi de 30 minutos?</div>
+        <div class="lunch-subtitle">Confirme 30 min ou escolha 1 hora antes de registrar a saída.</div>
+        <div class="lunch-options">
+          <label class="lunch-option">
+            <input type="radio" name="lunch_minutes" value="30" form="confirm-form" {% if lunch_minutes == 30 %}checked{% endif %}>
+            <span>30 min</span>
+          </label>
+          <label class="lunch-option">
+            <input type="radio" name="lunch_minutes" value="60" form="confirm-form" {% if lunch_minutes == 60 %}checked{% endif %}>
+            <span>1 hora</span>
+          </label>
+        </div>
+      </div>
+    {% endif %}
+
     <div class="confirm-actions">
-      <form method="post" action="{{ url_for('kiosk_confirm_punch', emp_id=employee.id, kind=kind) }}">
+      <form id="confirm-form" method="post" action="{{ url_for('kiosk_confirm_punch', emp_id=employee.id, kind=kind) }}">
         <button class="confirm-btn confirm-ok" type="submit">Confirmar</button>
       </form>
       <a class="confirm-btn confirm-cancel" href="{{ url_for('kiosk_employee', emp_id=employee.id) }}">Cancelar</a>
