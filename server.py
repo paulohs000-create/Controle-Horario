@@ -587,10 +587,44 @@ def logout():
 
 
 # ---------------- KIOSK ----------------
+def punch_local_date(punch: Punch | None) -> date | None:
+    if not punch:
+        return None
+    local = to_local(punch.at_utc)
+    return local.date() if local else None
+
+
+def get_today_open_in(db, emp_id: int, today_local: date) -> Punch | None:
+    """
+    Retorna uma entrada aberta de HOJE, se existir.
+    Entradas abertas de dias anteriores não bloqueiam o lançamento de hoje.
+    """
+    s_utc, e_utc = dt_range_utc_for_local_day(today_local)
+    punches = db.execute(
+        select(Punch)
+        .where(Punch.employee_id == emp_id)
+        .where(Punch.at_utc >= s_utc)
+        .where(Punch.at_utc < e_utc)
+        .order_by(Punch.at_utc.asc())
+    ).scalars().all()
+
+    current_in = None
+    for p in punches:
+        if p.kind == "IN":
+            current_in = p
+        elif p.kind == "OUT" and current_in is not None:
+            current_in = None
+    return current_in
+
+
 @app.get("/kiosk")
 @login_required
 @role_required("kiosk")
 def kiosk():
+    """
+    Tela principal do tablet:
+    mostra somente os nomes das costureiras em cards grandes.
+    """
     db = SessionLocal()
     try:
         employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
@@ -598,34 +632,84 @@ def kiosk():
 
         items = []
         for e in employees:
-            last = get_last_punch(db, e.id)
-            adj = get_or_create_adjustment(db, e.id, today_local)
             first_in, last_out = get_day_first_in_and_last_out(db, e.id, today_local)
+            open_today = get_today_open_in(db, e.id, today_local)
+            last = get_last_punch(db, e.id)
 
             items.append({
                 "id": e.id,
                 "name": e.name,
-                "last_kind": last.kind if last else None,
-                "last_at_local": to_local(last.at_utc) if last else None,
-                "can_in": can_punch_in(last),
-                "can_out": can_punch_out(last),
-                "lunch_minutes": int(adj.lunch_minutes or 0),
-                "day_off": bool(adj.day_off),
-                "justified": bool(adj.justified),
                 "today_in": to_local(first_in) if first_in else None,
                 "today_out": to_local(last_out) if last_out else None,
+                "open_today": bool(open_today),
+                "last_kind": last.kind if last else None,
+                "last_at_local": to_local(last.at_utc) if last else None,
             })
 
-        db.commit()
         return render_template("kiosk.html", items=items, today_local=today_local)
     finally:
         db.close()
 
 
-@app.post("/kiosk/punch/<int:emp_id>/<kind>")
+@app.get("/kiosk/employee/<int:emp_id>")
 @login_required
 @role_required("kiosk")
-def kiosk_punch(emp_id: int, kind: str):
+def kiosk_employee(emp_id: int):
+    """
+    Tela individual da costureira.
+    Mostra somente o botão correto: Entrada ou Saída.
+    Se houve entrada aberta em dia anterior, exibe um aviso, mas não bloqueia nova entrada.
+    """
+    db = SessionLocal()
+    try:
+        emp = db.get(Employee, emp_id)
+        if not emp:
+            flash("Funcionária não encontrada", "error")
+            return redirect(url_for("kiosk"))
+
+        today_local = datetime.now(APP_TZ).date()
+        now_local = datetime.now(APP_TZ)
+
+        first_in, last_out = get_day_first_in_and_last_out(db, emp_id, today_local)
+        open_today = get_today_open_in(db, emp_id, today_local)
+        last = get_last_punch(db, emp_id)
+
+        old_open_punch = None
+        if last and last.kind == "IN":
+            last_day = punch_local_date(last)
+            if last_day and last_day < today_local:
+                old_open_punch = last
+
+        # Regra visual:
+        # - Se há entrada aberta hoje, mostra apenas SAÍDA.
+        # - Caso contrário, mostra apenas ENTRADA, mesmo que tenha esquecido saída ontem.
+        action_kind = "OUT" if open_today else "IN"
+        action_label = "Registrar Saída" if action_kind == "OUT" else "Registrar Entrada"
+
+        return render_template(
+            "kiosk_employee.html",
+            employee=emp,
+            today_local=today_local,
+            now_local=now_local,
+            today_in=to_local(first_in) if first_in else None,
+            today_out=to_local(last_out) if last_out else None,
+            open_today=to_local(open_today.at_utc) if open_today else None,
+            old_open=to_local(old_open_punch.at_utc) if old_open_punch else None,
+            action_kind=action_kind,
+            action_label=action_label,
+        )
+    finally:
+        db.close()
+
+
+@app.post("/kiosk/employee/<int:emp_id>/prepare/<kind>")
+@login_required
+@role_required("kiosk")
+def kiosk_prepare_punch(emp_id: int, kind: str):
+    """
+    Tela de confirmação antes de gravar o ponto.
+    Mostra dia e horário para a costureira confirmar.
+    """
     kind = kind.upper()
     if kind not in ("IN", "OUT"):
         flash("Tipo inválido", "error")
@@ -638,31 +722,42 @@ def kiosk_punch(emp_id: int, kind: str):
             flash("Funcionária não encontrada", "error")
             return redirect(url_for("kiosk"))
 
-        last = get_last_punch(db, emp_id)
+        today_local = datetime.now(APP_TZ).date()
+        now_local = datetime.now(APP_TZ)
+        open_today = get_today_open_in(db, emp_id, today_local)
 
-        if kind == "IN" and not can_punch_in(last):
-            flash("Já existe uma entrada em aberto (falta saída).", "error")
-            return redirect(url_for("kiosk"))
+        # Segurança para evitar ação errada.
+        if kind == "OUT" and not open_today:
+            flash("Não existe entrada aberta hoje para registrar saída.", "error")
+            return redirect(url_for("kiosk_employee", emp_id=emp_id))
 
-        if kind == "OUT" and not can_punch_out(last):
-            flash("Não existe entrada para fechar (faça entrada primeiro).", "error")
-            return redirect(url_for("kiosk"))
+        if kind == "IN" and open_today:
+            flash("Já existe uma entrada aberta hoje. Registre a saída.", "error")
+            return redirect(url_for("kiosk_employee", emp_id=emp_id))
 
-        db.add(Punch(employee_id=emp_id, kind=kind, at_utc=utcnow()))
-        db.commit()
-        flash(f"Marcado {('ENTRADA' if kind=='IN' else 'SAÍDA')} para {emp.name}", "success")
-        return redirect(url_for("kiosk"))
+        return render_template(
+            "kiosk_confirm.html",
+            employee=emp,
+            kind=kind,
+            label="Entrada" if kind == "IN" else "Saída",
+            today_local=today_local,
+            now_local=now_local,
+        )
     finally:
         db.close()
 
 
-@app.post("/kiosk/adjust/<int:emp_id>")
+@app.post("/kiosk/employee/<int:emp_id>/confirm/<kind>")
 @login_required
 @role_required("kiosk")
-def kiosk_adjust(emp_id: int):
-    today_local = datetime.now(APP_TZ).date()
-    lunch = (request.form.get("lunch_minutes") or "").strip()
-    day_off = request.form.get("day_off") == "on"
+def kiosk_confirm_punch(emp_id: int, kind: str):
+    """
+    Grava o ponto após confirmação.
+    """
+    kind = kind.upper()
+    if kind not in ("IN", "OUT"):
+        flash("Tipo inválido", "error")
+        return redirect(url_for("kiosk"))
 
     db = SessionLocal()
     try:
@@ -671,15 +766,40 @@ def kiosk_adjust(emp_id: int):
             flash("Funcionária não encontrada", "error")
             return redirect(url_for("kiosk"))
 
-        adj = get_or_create_adjustment(db, emp_id, today_local)
-        adj.lunch_minutes = parse_lunch(lunch)
-        adj.day_off = bool(day_off)
+        today_local = datetime.now(APP_TZ).date()
+        open_today = get_today_open_in(db, emp_id, today_local)
 
+        if kind == "IN" and open_today:
+            flash("Já existe uma entrada aberta hoje. Registre a saída.", "error")
+            return redirect(url_for("kiosk_employee", emp_id=emp_id))
+
+        if kind == "OUT" and not open_today:
+            flash("Não existe entrada aberta hoje para registrar saída.", "error")
+            return redirect(url_for("kiosk_employee", emp_id=emp_id))
+
+        db.add(Punch(employee_id=emp_id, kind=kind, at_utc=utcnow()))
         db.commit()
-        flash(f"Ajustes salvos para {emp.name}.", "success")
+
+        flash(f"{('Entrada' if kind == 'IN' else 'Saída')} registrada para {emp.name}.", "success")
         return redirect(url_for("kiosk"))
     finally:
         db.close()
+
+
+# Rotas antigas mantidas para compatibilidade com links antigos.
+@app.post("/kiosk/punch/<int:emp_id>/<kind>")
+@login_required
+@role_required("kiosk")
+def kiosk_punch(emp_id: int, kind: str):
+    return redirect(url_for("kiosk_employee", emp_id=emp_id))
+
+
+@app.post("/kiosk/adjust/<int:emp_id>")
+@login_required
+@role_required("kiosk")
+def kiosk_adjust(emp_id: int):
+    # Ajustes de almoço/folga ficam no admin/semana. No tablet, mantemos a tela simples.
+    return redirect(url_for("kiosk_employee", emp_id=emp_id))
 
 
 # ---------------- ADMIN ----------------
