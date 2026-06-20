@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Confirmar {{ label }} - Ponto{% endblock %}
+{% block content %}
+
+<style>
+  .confirm-page {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .confirm-card {
+    background: #fff;
+    border-radius: 30px;
+    padding: 34px;
+    text-align: center;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, .12);
+  }
+
+  .confirm-title {
+    font-size: 40px;
+    font-weight: 900;
+    margin: 0 0 14px;
+    color: #111827;
+  }
+
+  .confirm-name {
+    font-size: 52px;
+    font-weight: 900;
+    color: #2563eb;
+    margin-bottom: 18px;
+  }
+
+  .confirm-time {
+    background: #f8fafc;
+    border: 2px solid #e5e7eb;
+    border-radius: 24px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .confirm-time .date {
+    font-size: 24px;
+    color: #4b5563;
+    margin-bottom: 8px;
+  }
+
+  .confirm-time .hour {
+    font-size: 58px;
+    font-weight: 900;
+    color: #111827;
+  }
+
+  .confirm-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .confirm-btn {
+    border: 0;
+    border-radius: 22px;
+    padding: 26px 18px;
+    font-size: 28px;
+    font-weight: 900;
+    cursor: pointer;
+    color: #fff;
+  }
+
+  .confirm-ok {
+    background: linear-gradient(135deg, #16a34a, #22c55e);
+  }
+
+  .confirm-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    background: #6b7280;
+  }
+
+  @media (max-width: 760px) {
+    .confirm-card {
+      padding: 24px;
+    }
+
+    .confirm-name {
+      font-size: 42px;
+    }
+
+    .confirm-time .hour {
+      font-size: 48px;
+    }
+
+    .confirm-actions {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="confirm-page">
+  <div class="confirm-card">
+    <h1 class="confirm-title">Confirmar {{ label }}</h1>
+    <div class="confirm-name">{{ employee.name }}</div>
+
+    <div class="confirm-time">
+      <div class="date">{{ now_local.strftime('%d/%m/%Y') }}</div>
+      <div class="hour">{{ now_local.strftime('%H:%M') }}</div>
+    </div>
+
+    <div class="confirm-actions">
+      <form method="post" action="{{ url_for('kiosk_confirm_punch', emp_id=employee.id, kind=kind) }}">
+        <button class="confirm-btn confirm-ok" type="submit">Confirmar</button>
+      </form>
+      <a class="confirm-btn confirm-cancel" href="{{ url_for('kiosk_employee', emp_id=employee.id) }}">Cancelar</a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
