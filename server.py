@@ -151,6 +151,7 @@ class Employee(Base):
     name = Column(String(200), nullable=False, unique=True)
     daily_minutes = Column(Integer, default=480)    # 8h
     weekly_minutes = Column(Integer, default=2400)  # 40h
+    active = Column(Boolean, default=True)           # Funcionária ativa/inativa
 
     punches = relationship("Punch", back_populates="employee", cascade="all, delete-orphan")
     adjustments = relationship("DailyAdjustment", back_populates="employee", cascade="all, delete-orphan")
@@ -204,6 +205,14 @@ def ensure_schema_upgrades():
             conn.execute(text("ALTER TABLE daily_adjustments ADD COLUMN justified BOOLEAN DEFAULT FALSE;"))
             conn.execute(text("UPDATE daily_adjustments SET justified = FALSE WHERE justified IS NULL;"))
 
+    employee_cols = {c["name"] for c in inspector.get_columns("employees")}
+    if "active" not in employee_cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE employees ADD COLUMN active BOOLEAN DEFAULT TRUE;"))
+            conn.execute(text("UPDATE employees SET active = TRUE WHERE active IS NULL;"))
+            # Sueli fica inativa por padrão após a migração, sem apagar histórico.
+            conn.execute(text("UPDATE employees SET active = FALSE WHERE name = 'Sueli';"))
+
 
 def ensure_db():
     Base.metadata.create_all(engine)
@@ -239,9 +248,9 @@ def seed_default_users_and_employees():
             e = db.execute(select(Employee).where(Employee.name == n)).scalar_one_or_none()
             if not e:
                 if n == "Regina":
-                    db.add(Employee(name=n, daily_minutes=0, weekly_minutes=0))
+                    db.add(Employee(name=n, daily_minutes=0, weekly_minutes=0, active=True))
                 else:
-                    db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400))
+                    db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400, active=(n != "Sueli")))
 
         db.commit()
     finally:
@@ -627,7 +636,11 @@ def kiosk():
     """
     db = SessionLocal()
     try:
-        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        employees = db.execute(
+            select(Employee)
+            .where(Employee.active == True)
+            .order_by(Employee.name.asc())
+        ).scalars().all()
         today_local = datetime.now(APP_TZ).date()
 
         items = []
@@ -663,8 +676,8 @@ def kiosk_employee(emp_id: int):
     db = SessionLocal()
     try:
         emp = db.get(Employee, emp_id)
-        if not emp:
-            flash("Funcionária não encontrada", "error")
+        if not emp or not bool(emp.active):
+            flash("Funcionária não encontrada ou inativa", "error")
             return redirect(url_for("kiosk"))
 
         today_local = datetime.now(APP_TZ).date()
@@ -718,8 +731,8 @@ def kiosk_prepare_punch(emp_id: int, kind: str):
     db = SessionLocal()
     try:
         emp = db.get(Employee, emp_id)
-        if not emp:
-            flash("Funcionária não encontrada", "error")
+        if not emp or not bool(emp.active):
+            flash("Funcionária não encontrada ou inativa", "error")
             return redirect(url_for("kiosk"))
 
         today_local = datetime.now(APP_TZ).date()
@@ -768,8 +781,8 @@ def kiosk_confirm_punch(emp_id: int, kind: str):
     db = SessionLocal()
     try:
         emp = db.get(Employee, emp_id)
-        if not emp:
-            flash("Funcionária não encontrada", "error")
+        if not emp or not bool(emp.active):
+            flash("Funcionária não encontrada ou inativa", "error")
             return redirect(url_for("kiosk"))
 
         today_local = datetime.now(APP_TZ).date()
@@ -823,7 +836,11 @@ def kiosk_adjust(emp_id: int):
 def dashboard():
     db = SessionLocal()
     try:
-        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        employees = db.execute(
+            select(Employee)
+            .where(Employee.active == True)
+            .order_by(Employee.name.asc())
+        ).scalars().all()
         today_local = datetime.now(APP_TZ).date()
 
         start_today_utc, end_today_utc = dt_range_utc_for_local_day(today_local)
@@ -982,6 +999,7 @@ def employees_update(emp_id: int):
     name = (request.form.get("name") or "").strip()
     daily = (request.form.get("daily_minutes") or "").strip()
     weekly = (request.form.get("weekly_minutes") or "").strip()
+    active = request.form.get("active") == "on"
 
     def to_int(v, fallback):
         try:
@@ -1001,6 +1019,7 @@ def employees_update(emp_id: int):
 
         emp.daily_minutes = to_int(daily, emp.daily_minutes)
         emp.weekly_minutes = to_int(weekly, emp.weekly_minutes)
+        emp.active = bool(active)
 
         db.commit()
         flash("Funcionária atualizada.", "success")
@@ -1015,7 +1034,11 @@ def employees_update(emp_id: int):
 def report():
     db = SessionLocal()
     try:
-        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        employees = db.execute(
+            select(Employee)
+            .where(Employee.active == True)
+            .order_by(Employee.name.asc())
+        ).scalars().all()
 
         today_local = datetime.now(APP_TZ).date()
         start_s = request.args.get("start") or today_local.replace(day=1).strftime("%Y-%m-%d")
@@ -1079,7 +1102,11 @@ def report():
 def week():
     db = SessionLocal()
     try:
-        employees = db.execute(select(Employee).order_by(Employee.name.asc())).scalars().all()
+        employees = db.execute(
+            select(Employee)
+            .where(Employee.active == True)
+            .order_by(Employee.name.asc())
+        ).scalars().all()
         if not employees:
             flash("Nenhuma funcionária cadastrada.", "error")
             return redirect(url_for("dashboard"))
@@ -1088,6 +1115,8 @@ def week():
         selected_emp = None
         if emp_id:
             selected_emp = db.get(Employee, int(emp_id))
+            if selected_emp and not bool(selected_emp.active):
+                selected_emp = None
         if not selected_emp:
             selected_emp = employees[0]
 
