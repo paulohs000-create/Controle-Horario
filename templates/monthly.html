@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Resumo Mensal{% endblock %}
+
+{% block content %}
+
+<div class="card">
+    <h2>Resumo Mensal</h2>
+
+    <form method="get">
+
+        <div class="grid">
+
+            <div>
+                <label>Funcionária</label>
+                <select name="employee_id">
+                    {% for e in employees %}
+                    <option value="{{ e.id }}"
+                        {% if selected_emp and e.id==selected_emp.id %}selected{% endif %}>
+                        {{ e.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label>Mês</label>
+                <input type="month" name="month" value="{{ month }}">
+            </div>
+
+            <div style="display:flex;align-items:end">
+                <button class="btn btn-primary">
+                    Carregar
+                </button>
+            </div>
+
+        </div>
+
+    </form>
+
+</div>
+
+<div class="card">
+
+    <h3>Resumo</h3>
+
+    <div class="summary-grid">
+
+        <div class="summary-box">
+            <small>Dias trabalhados</small>
+            <h2>{{ total_days }}</h2>
+        </div>
+
+        <div class="summary-box">
+            <small>Horas trabalhadas</small>
+            <h2>{{ total_hours }}</h2>
+        </div>
+
+        <div class="summary-box">
+            <small>Horas Extras</small>
+            <h2>{{ total_extra }}</h2>
+        </div>
+
+        <div class="summary-box">
+            <small>Dias Folga</small>
+            <h2>{{ total_dayoff }}</h2>
+        </div>
+
+    </div>
+
+</div>
+
+<div class="card">
+
+    <h3>Detalhamento</h3>
+
+    <table>
+
+        <thead>
+
+            <tr>
+                <th>Data</th>
+                <th>Entrada</th>
+                <th>Saída</th>
+                <th>Almoço</th>
+                <th>Horas</th>
+                <th>Extra</th>
+                <th>Folga</th>
+            </tr>
+
+        </thead>
+
+        <tbody>
+
+        {% for d in days %}
+
+            <tr>
+                <td>{{ d.date }}</td>
+                <td>{{ d.entry }}</td>
+                <td>{{ d.exit }}</td>
+                <td>{{ d.lunch }}</td>
+                <td>{{ d.hours }}</td>
+                <td>{{ d.extra }}</td>
+                <td>
+                    {% if d.day_off %}
+                        ✅
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+            </tr>
+
+        {% endfor %}
+
+        </tbody>
+
+    </table>
+
+</div>
+
+<style>
+
+.grid{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:15px;
+}
+
+.summary-grid{
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:15px;
+margin-top:20px;
+}
+
+.summary-box{
+background:#f7f7f7;
+border-radius:10px;
+padding:20px;
+text-align:center;
+}
+
+.summary-box h2{
+margin-top:8px;
+font-size:30px;
+color:#0d6efd;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+table th{
+background:#0d6efd;
+color:white;
+padding:10px;
+}
+
+table td{
+padding:10px;
+border-bottom:1px solid #ddd;
+text-align:center;
+}
+
+</style>
+
+{% endblock %}
