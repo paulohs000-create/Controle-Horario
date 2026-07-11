@@ -248,9 +248,14 @@ def seed_default_users_and_employees():
             e = db.execute(select(Employee).where(Employee.name == n)).scalar_one_or_none()
             if not e:
                 if n == "Regina":
-                    db.add(Employee(name=n, daily_minutes=0, weekly_minutes=0, active=True))
+                    db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2250, active=True))
                 else:
                     db.add(Employee(name=n, daily_minutes=480, weekly_minutes=2400, active=(n != "Sueli")))
+            elif n == "Regina":
+                # Regina passou a ser funcionária fixa com jornada semanal de 37h30.
+                e.daily_minutes = 480
+                e.weekly_minutes = 2250
+                e.active = True
 
         db.commit()
     finally:
@@ -378,6 +383,7 @@ def employee_workdays(employee: Employee) -> set[int]:
         "marly": {0, 1, 2, 3, 4},          # segunda a sexta
         "marli": {0, 1, 2, 3, 4},          # proteção se escreverem Marli
         "luziane": {1, 2, 3, 4, 5},        # terça a sábado
+        "regina": {0, 1, 2, 5, 6},         # seg, ter, qua, sáb e dom
         "suely": {6, 0, 1, 2, 3},          # domingo a quinta
         "sueli": {6, 0, 1, 2, 3},          # proteção para o nome já cadastrado
     }
@@ -391,10 +397,38 @@ def is_regular_workday(employee: Employee, d_local: date) -> bool:
 
 
 def expected_minutes_for_day(employee: Employee, day_off_flag: bool, d_local: date | None = None) -> int:
+    """
+    Minutos esperados por dia.
+
+    Regina:
+    - segunda, terça e quarta: 8h
+    - quinta e sexta: descanso
+    - sábado: 9h30
+    - domingo: 4h
+    Total semanal: 37h30.
+
+    Para as demais funcionárias, usa daily_minutes nos dias normais da escala.
+    """
     if day_off_flag:
         return 0
-    if d_local is not None and not is_regular_workday(employee, d_local):
-        return 0
+
+    if d_local is not None:
+        name = (employee.name or "").strip().lower()
+        if name == "regina":
+            regina_schedule = {
+                0: 480,  # segunda: 8h
+                1: 480,  # terça: 8h
+                2: 480,  # quarta: 8h
+                3: 0,    # quinta: descanso
+                4: 0,    # sexta: descanso
+                5: 570,  # sábado: 9h30
+                6: 240,  # domingo: 4h
+            }
+            return regina_schedule.get(d_local.weekday(), 0)
+
+        if not is_regular_workday(employee, d_local):
+            return 0
+
     return int(employee.daily_minutes or 0)
 
 
@@ -427,7 +461,6 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
       normal/creditado passar de 40h.
     """
     weekly_target = int(employee.weekly_minutes or 0)
-    daily_target = int(employee.daily_minutes or 0)
 
     total_worked_minutes = 0
     normal_minutes = 0
@@ -441,21 +474,22 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         lunch_d = int(adj.lunch_minutes or 0) if gross_d > 0 else 0
         net_d = net_minutes_for_day(gross_d, lunch_d)
         regular_workday = is_regular_workday(employee, d)
+        expected_d = expected_minutes_for_day(employee, False, d)
 
         if bool(adj.justified):
             # Falta/saída justificada (médico, exame, ausência abonada):
             # em dia normal de trabalho, credita o dia para a meta,
             # mas não gera hora extra nem desconto.
             if regular_workday:
-                normal_minutes += daily_target
-                total_worked_minutes += daily_target
+                normal_minutes += expected_d
+                total_worked_minutes += expected_d
 
         elif bool(adj.day_off):
             # Feriado/folga marcada em dia normal de trabalho:
             # mantém o crédito do dia para não descontar da meta semanal.
             if regular_workday:
-                normal_minutes += daily_target
-                total_worked_minutes += daily_target
+                normal_minutes += expected_d
+                total_worked_minutes += expected_d
 
             # O que foi trabalhado na folga é extra.
             if bool(adj.offday_paid):
