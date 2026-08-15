@@ -11,7 +11,7 @@
 
 <div class="card">
   <form method="get" action="{{ url_for('week') }}">
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px; align-items:end;">
+    <div class="form-grid">
       <div>
         <label>Funcionária</label>
         <select name="employee_id">
@@ -32,7 +32,7 @@
       </div>
 
       <div>
-        <button class="btn btn-primary" type="submit">Carregar</button>
+        <button class="btn btn-primary btn-mobile-full" type="submit">Carregar</button>
       </div>
     </div>
   </form>
@@ -43,7 +43,7 @@
     <input type="hidden" name="employee_id" value="{{ selected_emp.id }}">
     <input type="hidden" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
 
-    <div style="overflow-x:auto;">
+    <div class="table-scroll">
       <table>
         <thead>
           <tr>
@@ -114,7 +114,7 @@
       <strong>Justificado?</strong> use para médico, exame ou falta abonada. O dia conta para a meta, mas não gera hora extra.
     </div>
 
-    <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+    <div class="button-row" style="margin-top:14px;">
       <button class="btn btn-primary" type="submit">Salvar Semana</button>
     </div>
   </form>
@@ -122,7 +122,7 @@
   <form method="post" action="{{ url_for('week_reset') }}" style="margin-top:10px;">
     <input type="hidden" name="employee_id" value="{{ selected_emp.id }}">
     <input type="hidden" name="week_start" value="{{ week_start_date.strftime('%Y-%m-%d') }}">
-    <button class="btn btn-danger" type="submit">Zerar Semana</button>
+    <button class="btn btn-danger btn-mobile-full" type="submit">Zerar Semana</button>
   </form>
 </div>
 

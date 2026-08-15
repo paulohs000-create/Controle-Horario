@@ -14,7 +14,7 @@
       <input type="date" name="end" value="{{ end }}" />
     </div>
     <div style="align-self:flex-end;">
-      <button class="btn btn-primary" type="submit">Gerar</button>
+      <button class="btn btn-primary btn-mobile-full" type="submit">Gerar</button>
     </div>
   </form>
   <p class="muted" style="margin-top:10px;">
@@ -24,7 +24,7 @@
 </div>
 
 <div class="card">
-  <table>
+  <table class="mobile-card-table">
     <thead>
       <tr>
         <th>Funcionária</th>
@@ -38,12 +38,12 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td><strong>{{ r.name }}</strong></td>
-        <td>{{ r.gross }}</td>
-        <td>{{ r.lunch }}</td>
-        <td><strong>{{ r.net }}</strong></td>
-        <td>{{ r.expected }}</td>
-        <td>
+        <td data-label="Funcionária"><strong>{{ r.name }}</strong></td>
+        <td data-label="Bruto">{{ r.gross }}</td>
+        <td data-label="Almoço (total)">{{ r.lunch }}</td>
+        <td data-label="Líquido"><strong>{{ r.net }}</strong></td>
+        <td data-label="Esperado">{{ r.expected }}</td>
+        <td data-label="Saldo">
           {% if r.balance.startswith('-') %}
             <span class="neg">{{ r.balance }}</span>
           {% else %}

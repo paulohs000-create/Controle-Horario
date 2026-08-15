@@ -10,7 +10,7 @@
 </div>
 
 <div class="card">
-  <table>
+  <table class="mobile-card-table">
     <thead>
       <tr>
         <th>ID</th>
@@ -24,16 +24,17 @@
     <tbody>
       {% for e in employees %}
       <tr {% if not e.active %}style="opacity:.55;"{% endif %}>
-        <form method="post" action="{{ url_for('employees_update', emp_id=e.id) }}">
-          <td><strong>{{ e.id }}</strong></td>
-          <td><input name="name" value="{{ e.name }}" /></td>
-          <td><input name="daily_minutes" value="{{ e.daily_minutes }}" /></td>
-          <td><input name="weekly_minutes" value="{{ e.weekly_minutes }}" /></td>
-          <td style="text-align:center;">
-            <input type="checkbox" name="active" {% if e.active %}checked{% endif %} style="width:auto; transform:scale(1.3);">
-          </td>
-          <td><button class="btn btn-primary" type="submit">Salvar</button></td>
-        </form>
+        <td data-label="ID">
+          <form id="employee-{{ e.id }}" method="post" action="{{ url_for('employees_update', emp_id=e.id) }}"></form>
+          <strong>{{ e.id }}</strong>
+        </td>
+        <td data-label="Nome"><input form="employee-{{ e.id }}" name="name" value="{{ e.name }}" aria-label="Nome de {{ e.name }}" /></td>
+        <td data-label="Carga dia (min)"><input form="employee-{{ e.id }}" name="daily_minutes" inputmode="numeric" value="{{ e.daily_minutes }}" aria-label="Carga diária de {{ e.name }}" /></td>
+        <td data-label="Carga semana (min)"><input form="employee-{{ e.id }}" name="weekly_minutes" inputmode="numeric" value="{{ e.weekly_minutes }}" aria-label="Carga semanal de {{ e.name }}" /></td>
+        <td data-label="Ativa">
+          <input form="employee-{{ e.id }}" type="checkbox" name="active" {% if e.active %}checked{% endif %} style="width:24px; height:24px;" aria-label="Funcionária ativa">
+        </td>
+        <td data-label=""><button form="employee-{{ e.id }}" class="btn btn-primary" type="submit">Salvar</button></td>
       </tr>
       {% endfor %}
     </tbody>

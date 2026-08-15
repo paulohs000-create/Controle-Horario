@@ -93,11 +93,6 @@
   }
 
   @media (max-width: 760px) {
-    .wrap {
-      padding: 0 10px;
-      margin-top: 12px;
-    }
-
     .kiosk-hero {
       padding: 22px;
       border-radius: 22px;
@@ -120,6 +115,16 @@
     .employee-name {
       font-size: 30px;
     }
+  }
+
+  @media (max-width: 420px) {
+    .kiosk-hero { padding:18px; border-radius:16px; margin-bottom:14px; }
+    .kiosk-hero h1 { font-size:26px; }
+    .kiosk-hero .date { font-size:18px; }
+    .employee-card { min-height:0; padding:18px; border-radius:16px; }
+    .employee-name { font-size:26px; margin-bottom:8px; }
+    .employee-status { font-size:16px; }
+    .status-pill { max-width:100%; white-space:normal; font-size:14px; }
   }
 </style>
 

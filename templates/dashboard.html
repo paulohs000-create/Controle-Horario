@@ -16,7 +16,7 @@
 
 <div class="card">
   <h3>Funcionárias</h3>
-  <table>
+  <table class="mobile-card-table">
     <thead>
       <tr>
         <th>Funcionária</th>
@@ -29,7 +29,7 @@
     <tbody>
       {% for s in status %}
       <tr>
-        <td>
+        <td data-label="Funcionária">
           <strong>{{ s.name }}</strong><br/>
           <span class="muted">
             Carga: {{ (s.daily_minutes // 60) }}h{{ "%02d"|format(s.daily_minutes % 60) }} / dia
@@ -37,24 +37,24 @@
           </span>
         </td>
 
-        <td>
+        <td data-label="Ponto">
           {% if s.last_kind %}
             <strong>{{ s.last_kind }}</strong><br/>
             <span class="muted">{{ s.last_at_local.strftime("%Y-%m-%d %H:%M") }}</span>
           {% else %}
             <span class="muted">Sem marcações</span>
           {% endif %}
-          <div style="margin-top:8px;">
-            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='IN') }}" style="display:inline;">
+          <div class="button-row" style="margin-top:8px;">
+            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='IN') }}">
               <button class="btn btn-primary" {% if not s.can_in %}disabled{% endif %}>Entrada</button>
             </form>
-            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='OUT') }}" style="display:inline;">
+            <form method="post" action="{{ url_for('punch', emp_id=s.id, kind='OUT') }}">
               <button class="btn btn-danger" {% if not s.can_out %}disabled{% endif %}>Saída</button>
             </form>
           </div>
         </td>
 
-        <td style="min-width:240px;">
+        <td data-label="Ajustes de hoje">
           <form method="post" action="{{ url_for('set_today_adjustments', emp_id=s.id) }}">
             <label class="muted">Almoço</label>
             <select name="lunch_minutes">
@@ -81,7 +81,7 @@
           </form>
         </td>
 
-        <td>
+        <td data-label="Hoje">
           <div class="muted">Trabalhado: <strong>{{ s.today_worked }}</strong></div>
           <div class="muted">Meta do dia: <strong>{{ s.today_expected }}</strong></div>
           <div class="muted">Falta hoje: <strong>{{ s.today_missing }}</strong></div>
@@ -98,7 +98,7 @@
           </div>
         </td>
 
-        <td>
+        <td data-label="Semana">
           <div class="muted">Acumulado: <strong>{{ s.week_accumulated }}</strong></div>
           <div class="muted">Meta: <strong>{{ s.week_expected }}</strong></div>
           <div class="muted">Falta p/ meta: <strong>{{ s.week_remaining }}</strong></div>
