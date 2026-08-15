@@ -5,16 +5,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{% block title %}Ponto{% endblock %}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; background:#f6f7fb; }
-    header { background:#111827; color:#fff; padding:14px 18px; display:flex; gap:14px; align-items:center; }
-    header a { color:#fff; text-decoration:none; opacity:.9; }
-    header a:hover { opacity:1; text-decoration:underline; }
-    .wrap { max-width: 1100px; margin: 18px auto; padding: 0 14px; }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { font-family: Arial, sans-serif; margin: 0; background:#f6f7fb; color:#111827; }
+    header { background:#111827; color:#fff; }
+    .header-inner { max-width:1128px; min-height:60px; margin:0 auto; padding:10px 14px; display:flex; gap:18px; align-items:center; }
+    .brand { color:#fff; font-size:20px; text-decoration:none; }
+    .main-nav { display:flex; gap:16px; align-items:center; flex:1; }
+    .main-nav a { color:#fff; text-decoration:none; opacity:.9; padding:10px 0; }
+    .main-nav a:hover, .main-nav a:focus-visible { opacity:1; text-decoration:underline; }
+    .nav-logout { margin-left:auto; }
+    .nav-toggle { display:none; margin-left:auto; min-width:44px; min-height:44px; padding:8px 12px; border:1px solid #4b5563; border-radius:10px; background:#1f2937; color:#fff; font-size:22px; cursor:pointer; }
+    .wrap { max-width: 1128px; margin: 18px auto; padding: 0 14px; }
     .card { background:#fff; border-radius:12px; padding:16px; box-shadow:0 1px 10px rgba(0,0,0,.06); margin-bottom:14px; }
+    h1, h2, h3 { overflow-wrap:anywhere; }
+    h2, h3 { margin-top:0; }
     table { width:100%; border-collapse: collapse; }
     th, td { padding:10px; border-bottom:1px solid #e5e7eb; text-align:left; vertical-align: top; }
     th { background:#f3f4f6; }
-    .btn { display:inline-block; padding:10px 12px; border-radius:10px; border:0; cursor:pointer; text-decoration:none; }
+    .table-scroll { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:10px 12px; border-radius:10px; border:0; cursor:pointer; text-decoration:none; font:inherit; }
     .btn-primary { background:#2563eb; color:#fff; }
     .btn-danger { background:#dc2626; color:#fff; }
     .btn-gray { background:#374151; color:#fff; }
@@ -23,28 +33,77 @@
     .flash.success { background:#dcfce7; color:#166534; }
     .flash.error { background:#fee2e2; color:#991b1b; }
     .muted { color:#6b7280; font-size: 13px; }
-    input, select { padding:10px 12px; border-radius:10px; border:1px solid #d1d5db; width:100%; }
+    input, select { min-height:44px; padding:10px 12px; border-radius:10px; border:1px solid #d1d5db; width:100%; font:inherit; background:#fff; }
+    input[type="checkbox"], input[type="radio"] { min-height:0; accent-color:#2563eb; }
+    label { display:inline-block; margin-bottom:5px; }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end; }
+    .form-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; align-items:end; }
+    .button-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .button-row > form { margin:0; }
+    .summary-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:15px; margin-top:20px; }
+    .summary-box { background:#f7f7f7; border-radius:10px; padding:20px; text-align:center; }
+    .summary-box h2 { margin:8px 0 0; font-size:30px; color:#0d6efd; }
     .pos { color:#166534; font-weight:bold; }
     .neg { color:#991b1b; font-weight:bold; }
     .badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#eef2ff; color:#3730a3; font-size:12px; }
+
+    @media (max-width: 820px) {
+      .header-inner { flex-wrap:wrap; gap:8px; }
+      .nav-toggle { display:block; }
+      .main-nav { display:none; flex-basis:100%; flex-direction:column; align-items:stretch; gap:2px; padding:4px 0 8px; }
+      .main-nav.is-open { display:flex; }
+      .main-nav a { padding:12px; border-radius:8px; }
+      .main-nav a:hover, .main-nav a:focus-visible { background:#1f2937; text-decoration:none; }
+      .nav-logout { margin-left:0; border-top:1px solid #374151; margin-top:4px; }
+      .wrap { margin:12px auto; padding:0 10px; }
+      .card { padding:14px; border-radius:10px; }
+      .summary-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+
+      .mobile-card-table, .mobile-card-table tbody, .mobile-card-table tr, .mobile-card-table td { display:block; width:100%; }
+      .mobile-card-table thead { display:none; }
+      .mobile-card-table tbody { display:grid; gap:12px; }
+      .mobile-card-table tr { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:4px 12px; box-shadow:0 2px 8px rgba(15,23,42,.05); }
+      .mobile-card-table td { display:grid; grid-template-columns:minmax(105px, 35%) minmax(0, 1fr); gap:12px; padding:10px 0; border-bottom:1px solid #e5e7eb; overflow-wrap:anywhere; }
+      .mobile-card-table td:last-child { border-bottom:0; }
+      .mobile-card-table td::before { content:attr(data-label); color:#6b7280; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.02em; }
+      .mobile-card-table td[data-label=""]::before { display:none; }
+      .mobile-card-table td[data-label=""] { grid-template-columns:1fr; }
+      .mobile-card-table td > form, .mobile-card-table td > div { min-width:0; }
+      .mobile-card-table .btn { width:100%; }
+    }
+
+    @media (max-width: 520px) {
+      .header-inner { padding-left:10px; padding-right:10px; }
+      .card { padding:12px; }
+      .form-grid, .summary-grid { grid-template-columns:1fr; }
+      .button-row > form { flex:1 1 100%; }
+      .btn-mobile-full, .button-row .btn { width:100%; }
+      .mobile-card-table td { grid-template-columns:1fr; gap:5px; }
+      .mobile-card-table td::before { margin-bottom:2px; }
+      .flash { font-size:14px; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <strong>Ponto</strong>
+    <div class="header-inner">
+      <a class="brand" href="{% if current_user.is_authenticated and current_user.role != 'admin' %}{{ url_for('kiosk') }}{% else %}{{ url_for('dashboard') if current_user.is_authenticated else url_for('login') }}{% endif %}"><strong>Ponto</strong></a>
 
-    {% if current_user.is_authenticated %}
-      {% if current_user.role == 'admin' %}
-        <a href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a href="{{ url_for('week') }}">Semana</a>
-        <a href="{{ url_for('employees') }}">Funcionárias</a>
-        <a href="{{ url_for('report') }}">Relatório</a>
-      {% else %}
-        <a href="{{ url_for('kiosk') }}">Tablet</a>
+      {% if current_user.is_authenticated %}
+        <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav" aria-label="Abrir menu">☰</button>
+        <nav class="main-nav" id="main-nav" aria-label="Navegação principal">
+          {% if current_user.role == 'admin' %}
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('week') }}">Semana</a>
+            <a href="{{ url_for('employees') }}">Funcionárias</a>
+            <a href="{{ url_for('report') }}">Relatório</a>
+          {% else %}
+            <a href="{{ url_for('kiosk') }}">Tablet</a>
+          {% endif %}
+          <a class="nav-logout" href="{{ url_for('logout') }}">Sair</a>
+        </nav>
       {% endif %}
-      <span style="flex:1"></span>
-      <a href="{{ url_for('logout') }}">Sair</a>
-    {% endif %}
+    </div>
   </header>
 
   <div class="wrap">
@@ -58,5 +117,17 @@
 
     {% block content %}{% endblock %}
   </div>
+  <script>
+    const navToggle = document.querySelector('.nav-toggle');
+    const mainNav = document.querySelector('.main-nav');
+    if (navToggle && mainNav) {
+      navToggle.addEventListener('click', () => {
+        const isOpen = mainNav.classList.toggle('is-open');
+        navToggle.setAttribute('aria-expanded', String(isOpen));
+        navToggle.setAttribute('aria-label', isOpen ? 'Fechar menu' : 'Abrir menu');
+        navToggle.textContent = isOpen ? '✕' : '☰';
+      });
+    }
+  </script>
 </body>
 </html>
