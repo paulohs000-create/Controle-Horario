@@ -1143,20 +1143,22 @@ def productivity():
 
         # Faixas ajustáveis. Os valores iniciais servem apenas como uma base.
         limits = [
-            parse_money(request.args.get("limit_1") or "28"),
-            parse_money(request.args.get("limit_2") or "30"),
-            parse_money(request.args.get("limit_3") or "32"),
-            parse_money(request.args.get("limit_4") or "34"),
+            parse_money(request.args.get("limit_1") or "19"),
+            parse_money(request.args.get("limit_2") or "21.5"),
+            parse_money(request.args.get("limit_3") or "23"),
+            parse_money(request.args.get("limit_4") or "25"),
         ]
         bonus_values = [
             parse_money(request.args.get("bonus_0") or "0"),
-            parse_money(request.args.get("bonus_1") or "50"),
+            parse_money(request.args.get("bonus_1") or "70"),
             parse_money(request.args.get("bonus_2") or "100"),
             parse_money(request.args.get("bonus_3") or "150"),
             parse_money(request.args.get("bonus_4") or "200"),
         ]
 
+        base_bonus = None
         suggested_bonus = None
+        attendance_factor = min(1.0, total_hours_decimal / 160.0) if total_hours_decimal > 0 else 0.0
         calculation_requested = bool(production_text)
         limits_valid = limits == sorted(limits)
         if calculation_requested and not limits_valid:
@@ -1164,11 +1166,16 @@ def productivity():
         elif calculation_requested and total_minutes <= 0:
             flash("Não há horas trabalhadas no mês selecionado para calcular a produtividade.", "error")
         elif calculation_requested:
-            suggested_bonus = bonus_values[4]
+            base_bonus = bonus_values[4]
             for index, limit in enumerate(limits):
                 if production_per_hour < limit:
-                    suggested_bonus = bonus_values[index]
+                    base_bonus = bonus_values[index]
                     break
+
+            # Em meses com menos de 160 horas, o bônus é proporcional.
+            # Arredonda para o múltiplo de €5 mais próximo e nunca passa de €200.
+            proportional_bonus = max(0.0, base_bonus) * attendance_factor
+            suggested_bonus = min(200.0, round(proportional_bonus / 5.0) * 5.0)
 
         return render_template(
             "productivity.html",
@@ -1180,7 +1187,9 @@ def productivity():
             production=production_text,
             production_value=production,
             production_per_hour=production_per_hour,
+            base_bonus=base_bonus,
             suggested_bonus=suggested_bonus,
+            attendance_factor=attendance_factor,
             calculation_requested=calculation_requested,
             limits=limits,
             bonus_values=bonus_values,
