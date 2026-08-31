@@ -96,7 +96,13 @@
 
 <div class="card formula-card">
   <strong>Como é calculado:</strong>
-  produção por hora = total produzido ÷ horas trabalhadas. O bônus é apenas uma sugestão baseada nas faixas configuradas acima.
+  produção por hora = total produzido ÷ horas trabalhadas.
+  {% if suggested_bonus is not none %}
+    Bônus-base: <strong>€ {{ '%.2f'|format(base_bonus) }}</strong>.
+    Fator de presença: <strong>{{ '%.1f'|format(attendance_factor * 100) }}%</strong>
+    {% if attendance_factor < 1 %}(proporcional a 160 horas){% else %}(bônus integral a partir de 160 horas){% endif %}.
+  {% endif %}
+  O resultado é arredondado para €5 e limitado a €200.
 </div>
 
 <style>
