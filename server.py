@@ -117,6 +117,14 @@ def parse_money(v: str) -> float:
         return 0.0
 
 
+def parse_month(v: str) -> date | None:
+    """Aceita o valor YYYY-MM enviado pelo campo HTML type=month."""
+    try:
+        return datetime.strptime((v or "").strip(), "%Y-%m").date().replace(day=1)
+    except Exception:
+        return None
+
+
 # -----------------------------------------------------------------------------
 # Database
 # -----------------------------------------------------------------------------
@@ -1058,6 +1066,125 @@ def employees_update(emp_id: int):
         db.commit()
         flash("Funcionária atualizada.", "success")
         return redirect(url_for("employees"))
+    finally:
+        db.close()
+
+
+# ---------------- Produtividade / bônus (admin) ----------------
+@app.get("/productivity")
+@login_required
+@role_required("admin")
+def productivity():
+    """
+    Resumo mensal independente das regras de hora extra.
+
+    A produção é informada apenas para o cálculo exibido na tela; nenhum dado
+    de ponto, escala ou ajuste semanal é alterado por esta rota.
+    """
+    db = SessionLocal()
+    try:
+        employees = db.execute(
+            select(Employee)
+            .where(Employee.active == True)
+            .order_by(Employee.name.asc())
+        ).scalars().all()
+
+        if not employees:
+            flash("Nenhuma funcionária ativa cadastrada.", "error")
+            return redirect(url_for("dashboard"))
+
+        selected_emp = None
+        try:
+            emp_id = int(request.args.get("employee_id") or 0)
+        except (TypeError, ValueError):
+            emp_id = 0
+
+        if emp_id:
+            selected_emp = db.get(Employee, emp_id)
+            if selected_emp and not bool(selected_emp.active):
+                selected_emp = None
+        if not selected_emp:
+            selected_emp = employees[0]
+
+        today = datetime.now(APP_TZ).date()
+        month_start = parse_month(request.args.get("month") or "") or today.replace(day=1)
+        if month_start.month == 12:
+            month_end = date(month_start.year + 1, 1, 1)
+        else:
+            month_end = date(month_start.year, month_start.month + 1, 1)
+
+        total_minutes = 0
+        worked_days = 0
+        current_day = month_start
+        while current_day < month_end:
+            gross = worked_minutes_gross_for_day(db, selected_emp.id, current_day)
+            day_key = current_day.strftime("%Y-%m-%d")
+            adjustment = db.execute(
+                select(DailyAdjustment)
+                .where(DailyAdjustment.employee_id == selected_emp.id)
+                .where(DailyAdjustment.day_local == day_key)
+            ).scalar_one_or_none()
+            if gross > 0:
+                # Mantém o padrão histórico do sistema sem criar registros
+                # apenas por consultar esta tela.
+                lunch = int(adjustment.lunch_minutes or 0) if adjustment else 30
+            else:
+                lunch = 0
+            net = net_minutes_for_day(gross, lunch)
+            total_minutes += net
+            if net > 0:
+                worked_days += 1
+            current_day += timedelta(days=1)
+
+        production_text = (request.args.get("production") or "").strip()
+        production = parse_money(production_text)
+        total_hours_decimal = total_minutes / 60.0
+        production_per_hour = production / total_hours_decimal if total_hours_decimal > 0 else 0.0
+
+        # Faixas ajustáveis. Os valores iniciais servem apenas como uma base.
+        limits = [
+            parse_money(request.args.get("limit_1") or "28"),
+            parse_money(request.args.get("limit_2") or "30"),
+            parse_money(request.args.get("limit_3") or "32"),
+            parse_money(request.args.get("limit_4") or "34"),
+        ]
+        bonus_values = [
+            parse_money(request.args.get("bonus_0") or "0"),
+            parse_money(request.args.get("bonus_1") or "50"),
+            parse_money(request.args.get("bonus_2") or "100"),
+            parse_money(request.args.get("bonus_3") or "150"),
+            parse_money(request.args.get("bonus_4") or "200"),
+        ]
+
+        suggested_bonus = None
+        calculation_requested = bool(production_text)
+        limits_valid = limits == sorted(limits)
+        if calculation_requested and not limits_valid:
+            flash("As faixas de produtividade devem estar em ordem crescente.", "error")
+        elif calculation_requested and total_minutes <= 0:
+            flash("Não há horas trabalhadas no mês selecionado para calcular a produtividade.", "error")
+        elif calculation_requested:
+            suggested_bonus = bonus_values[4]
+            for index, limit in enumerate(limits):
+                if production_per_hour < limit:
+                    suggested_bonus = bonus_values[index]
+                    break
+
+        return render_template(
+            "productivity.html",
+            employees=employees,
+            selected_emp=selected_emp,
+            month=month_start.strftime("%Y-%m"),
+            total_days=worked_days,
+            total_hours=minutes_to_hhmm(total_minutes),
+            production=production_text,
+            production_value=production,
+            production_per_hour=production_per_hour,
+            suggested_bonus=suggested_bonus,
+            calculation_requested=calculation_requested,
+            limits=limits,
+            bonus_values=bonus_values,
+        )
     finally:
         db.close()
 
