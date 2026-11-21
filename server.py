@@ -265,6 +265,15 @@ def seed_default_users_and_employees():
                 e.weekly_minutes = 2250
                 e.active = True
 
+        # Josi: 39h30 semanais; não altera o histórico de pontos.
+        josi = db.execute(select(Employee).where(Employee.name == "Josi")).scalar_one_or_none()
+        if josi:
+            josi.daily_minutes = 480
+            josi.weekly_minutes = 2370
+            josi.active = True
+        else:
+            db.add(Employee(name="Josi", daily_minutes=480, weekly_minutes=2370, active=True))
+
         db.commit()
     finally:
         db.close()
@@ -391,7 +400,8 @@ def employee_workdays(employee: Employee) -> set[int]:
         "marly": {0, 1, 2, 3, 4},          # segunda a sexta
         "marli": {0, 1, 2, 3, 4},          # proteção se escreverem Marli
         "luziane": {1, 2, 3, 4, 5},        # terça a sábado
-        "regina": {0, 1, 2, 5, 6},         # seg, ter, qua, sáb e dom
+        "regina": {0, 1, 2, 5, 6},
+        "josi": {0, 1, 2, 5, 6},         # seg, ter, qua, sáb e dom
         "suely": {6, 0, 1, 2, 3},          # domingo a quinta
         "sueli": {6, 0, 1, 2, 3},          # proteção para o nome já cadastrado
     }
@@ -422,6 +432,18 @@ def expected_minutes_for_day(employee: Employee, day_off_flag: bool, d_local: da
 
     if d_local is not None:
         name = (employee.name or "").strip().lower()
+        if name == "josi":
+            josi_schedule = {
+                0: 480,  # segunda
+                1: 480,  # terça
+                2: 480,  # quarta
+                3: 0,    # quinta: folga
+                4: 0,    # sexta: folga
+                5: 480,  # sábado
+                6: 450,  # domingo: 09:30-18:00 menos 60min almoço
+            }
+            return josi_schedule.get(d_local.weekday(), 0)
+
         if name == "regina":
             regina_schedule = {
                 0: 480,  # segunda: 8h
@@ -474,6 +496,7 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
     normal_minutes = 0
     unpaid_offday_extra_minutes = 0
     paid_offday_extra_minutes = 0
+    daily_extra_minutes = 0
 
     d = ws
     while d <= we:
@@ -507,7 +530,12 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
                 total_worked_minutes += net_d
         else:
             if regular_workday:
-                normal_minutes += net_d
+                if (employee.name or "").strip().lower() == "josi":
+                    # Para Josi, excesso diário é extra mesmo se a semana não passar da meta.
+                    normal_minutes += min(net_d, expected_d)
+                    daily_extra_minutes += max(0, net_d - expected_d)
+                else:
+                    normal_minutes += net_d
                 total_worked_minutes += net_d
             else:
                 # Dia fora da escala, mesmo sem marcar Folga, não entra na meta.
@@ -524,7 +552,7 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         extra_from_normal_days = 0
         missing_minutes = 0
 
-    total_extra_minutes = unpaid_offday_extra_minutes + extra_from_normal_days
+    total_extra_minutes = unpaid_offday_extra_minutes + extra_from_normal_days + daily_extra_minutes
 
     return {
         "total_worked_minutes": total_worked_minutes,
@@ -532,7 +560,7 @@ def calculate_week_minutes(db, employee: Employee, ws: date, we: date) -> dict:
         "normal_minutes": normal_minutes,
         "unpaid_offday_extra_minutes": unpaid_offday_extra_minutes,
         "paid_offday_extra_minutes": paid_offday_extra_minutes,
-        "extra_from_normal_days": extra_from_normal_days,
+        "extra_from_normal_days": extra_from_normal_days + daily_extra_minutes,
         "missing_minutes": missing_minutes,
         "total_extra_minutes": total_extra_minutes,
     }
